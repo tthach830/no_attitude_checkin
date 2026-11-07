@@ -14,7 +14,6 @@ import {
   Clock,
   MapPin,
   AlertCircle,
-  Smartphone,
   FolderOpen,
   Layers,
   Trash2,
@@ -22,6 +21,9 @@ import {
   Save,
   BookmarkCheck,
   Download,
+  QrCode,
+  Wifi,
+  ShieldCheck,
 } from 'lucide-react';
 import type { TeamEntry, FilterStatus, SavedTournament } from './types';
 import {
@@ -34,6 +36,12 @@ import {
   autoAssignCourtsByTeamCount,
   formatCourtRangeLabel,
 } from './utils/csv';
+import {
+  getClientSenderId,
+  publishLiveSync,
+  fetchLatestLiveState,
+  subscribeToLiveUpdates,
+} from './utils/liveSync';
 
 const STORAGE_KEY = 'no_attitude_checkin_teams_v4';
 const STORAGE_COURTS_KEY = 'no_attitude_checkin_total_courts_v1';
@@ -118,6 +126,14 @@ export function App() {
   const [statusFilter, setStatusFilter] = useState<FilterStatus>('all');
   const [isDraggingOver, setIsDraggingOver] = useState(false);
 
+  // Player Self Check-In Mode vs Organizer Mode
+  const [isPlayerMode, setIsPlayerMode] = useState<boolean>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('mode') === 'player';
+  });
+  const [liveSyncStatus, setLiveSyncStatus] = useState<'connecting' | 'live' | 'offline'>('connecting');
+  const senderIdRef = useRef<string>(getClientSenderId());
+
   // Modals
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showSaveTournamentModal, setShowSaveTournamentModal] = useState(false);
@@ -142,6 +158,73 @@ export function App() {
   const multiFileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const tournamentBackupInputRef = useRef<HTMLInputElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Real-time cloud sync for Player Self Check-In across all devices
+  useEffect(() => {
+    let active = true;
+
+    fetchLatestLiveState().then((remote) => {
+      if (!active) return;
+      if (remote && Array.isArray(remote.teams) && remote.teams.length > 0) {
+        setTournamentName(remote.tournamentName);
+        setTotalCourtsAvailable(remote.totalCourtsAvailable);
+        setTeams(remote.teams);
+        setSelectedDivision((prev) =>
+          remote.teams.some((t) => t.division === prev)
+            ? prev
+            : remote.teams[0]?.division || 'Coed Intermediate'
+        );
+      }
+      setLiveSyncStatus('live');
+    });
+
+    const unsubscribe = subscribeToLiveUpdates((payload) => {
+      if (!active) return;
+      setLiveSyncStatus('live');
+      if (payload.senderId === senderIdRef.current) return;
+
+      if (payload.type === 'full_state' && Array.isArray(payload.teams) && payload.teams.length > 0) {
+        setTournamentName(payload.tournamentName || 'Tournament Check-In');
+        setTotalCourtsAvailable(payload.totalCourtsAvailable || 18);
+        setTeams(payload.teams);
+      } else if (payload.type === 'team_update' && payload.updatedTeam) {
+        const updated = payload.updatedTeam;
+        setTeams((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+      }
+    });
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, []);
+
+  const broadcastFullRosterToLive = (
+    nextTeams: TeamEntry[],
+    nextTotalCourts: number = totalCourtsAvailable,
+    nextName: string = tournamentName
+  ) => {
+    publishLiveSync({
+      type: 'full_state',
+      senderId: senderIdRef.current,
+      timestamp: Date.now(),
+      tournamentName: nextName,
+      totalCourtsAvailable: nextTotalCourts,
+      teams: nextTeams,
+    });
+  };
+
+  const broadcastTeamCheckInToLive = (updatedTeam: TeamEntry) => {
+    publishLiveSync({
+      type: 'team_update',
+      senderId: senderIdRef.current,
+      timestamp: Date.now(),
+      tournamentName,
+      totalCourtsAvailable,
+      updatedTeam,
+    });
+  };
 
   // Persist active tournament state on every change
   useEffect(() => {
@@ -409,8 +492,11 @@ export function App() {
 
         triggerCheckInBanner(
           updated,
-          targetChecked ? 'Team Checked In!' : 'Check-In Cleared'
+          targetChecked
+            ? `Checked In! Go to Court ${updated.courts} (${updated.poolName})`
+            : 'Check-In Cleared'
         );
+        broadcastTeamCheckInToLive(updated);
 
         return updated;
       })
@@ -448,11 +534,12 @@ export function App() {
         triggerCheckInBanner(
           updated,
           allChecked
-            ? `Full Team Checked In (${toggledPlayerName} arrived)`
+            ? `Full Team Checked In! Go to Court ${updated.courts}`
             : toggledPlayerChecked
-            ? `${toggledPlayerName} Checked In (1/2 Here)`
+            ? `${toggledPlayerName} Checked In! Court ${updated.courts} (${updated.poolName})`
             : `${toggledPlayerName} Unchecked`
         );
+        broadcastTeamCheckInToLive(updated);
 
         return updated;
       })
@@ -514,10 +601,11 @@ export function App() {
           ? newlyLoadedTeams
           : [...prev.filter((t) => !uploadedDivisions.has(t.division)), ...newlyLoadedTeams];
 
-      if (autoAssignOnUpload) {
-        return autoAssignCourtsByTeamCount(combined, totalCourtsAvailable).teams;
-      }
-      return combined;
+      const finalTeams = autoAssignOnUpload
+        ? autoAssignCourtsByTeamCount(combined, totalCourtsAvailable).teams
+        : combined;
+      broadcastFullRosterToLive(finalTeams, totalCourtsAvailable);
+      return finalTeams;
     });
 
     const firstDiv = Array.from(uploadedDivisions)[0] || 'Coed Intermediate';
@@ -527,9 +615,9 @@ export function App() {
     setUploadError(null);
     setShowUploadModal(false);
     setUploadSuccessBanner(
-      `Loaded & saved ${newlyLoadedTeams.length} teams across ${uploadedDivisions.size} division${
+      `Loaded & published ${newlyLoadedTeams.length} teams across ${uploadedDivisions.size} division${
         uploadedDivisions.size > 1 ? 's' : ''
-      } (${divNames}) with ${totalCourtsAvailable} courts assigned.`
+      } (${divNames}) for player self check-in.`
     );
     setTimeout(() => setUploadSuccessBanner(null), 5000);
   };
@@ -638,7 +726,11 @@ export function App() {
 
   const handleAutoAssignAllCourts = (courtsCount: number) => {
     setTotalCourtsAvailable(courtsCount);
-    setTeams((prev) => autoAssignCourtsByTeamCount(prev, courtsCount).teams);
+    setTeams((prev) => {
+      const next = autoAssignCourtsByTeamCount(prev, courtsCount).teams;
+      broadcastFullRosterToLive(next, courtsCount);
+      return next;
+    });
     setUploadSuccessBanner(
       `Auto-assigned Courts 1–${courtsCount} across ${divisionsList.length} divisions based on team counts.`
     );
@@ -731,10 +823,12 @@ export function App() {
     }));
   }, [divisionScopedTeams]);
 
-  // Filtered teams
+  // Filtered teams — when searching by player/team name, search across ALL divisions so players find their team immediately
   const filteredTeams = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return divisionScopedTeams.filter((team) => {
+    const sourceTeams = q ? teams : divisionScopedTeams;
+
+    return sourceTeams.filter((team) => {
       const status = getTeamStatus(team);
       if (statusFilter === 'checked-in' && status !== 'checked-in') return false;
       if (statusFilter === 'partial' && status !== 'partial') return false;
@@ -759,7 +853,15 @@ export function App() {
         notesMatch
       );
     });
-  }, [divisionScopedTeams, statusFilter, searchQuery]);
+  }, [teams, divisionScopedTeams, statusFilter, searchQuery]);
+
+  // Automatically highlight the first matching team in the Now Checking In pass when a player searches their name
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (q.length >= 2 && filteredTeams.length > 0) {
+      setActiveTeamId(filteredTeams[0].id);
+    }
+  }, [searchQuery, filteredTeams]);
 
   // Group by Division + Pool
   const groupedByDivisionAndPool = useMemo(() => {
@@ -890,78 +992,107 @@ export function App() {
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <button
-                    onClick={() => setShowSaveTournamentModal(true)}
+                    onClick={() => !isPlayerMode && setShowSaveTournamentModal(true)}
                     className="text-lg sm:text-xl font-bold tracking-tight hover:text-emerald-300 transition flex items-center gap-1.5 cursor-pointer"
-                    title="Click to rename or manage saved tournaments"
+                    title="Tournament Name"
                   >
                     <span>{tournamentName}</span>
-                    <Edit3 className="w-3.5 h-3.5 text-slate-400" />
+                    {!isPlayerMode && <Edit3 className="w-3.5 h-3.5 text-slate-400" />}
                   </button>
                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
                     <Layers className="w-3 h-3" />
                     {divisionsList.length} Divisions • {teams.length} Teams • {totalCourtsAvailable} Courts
                   </span>
-                  <button
-                    onClick={() => setShowSaveTournamentModal(true)}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-800 text-emerald-400 border border-slate-700 hover:bg-slate-700 cursor-pointer"
-                    title={`Last saved at ${new Date(lastSavedAt).toLocaleTimeString()}`}
+                  <span
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-800 text-emerald-400 border border-slate-700"
+                    title={`Live Self Check-In Sync Active • Last saved at ${new Date(lastSavedAt).toLocaleTimeString()}`}
                   >
-                    <BookmarkCheck className="w-3 h-3" />
+                    <Wifi className="w-3 h-3 text-emerald-400" />
                     <span>
-                      Saved{' '}
-                      {new Date(lastSavedAt).toLocaleTimeString([], {
-                        hour: 'numeric',
-                        minute: '2-digit',
-                      })}
+                      {liveSyncStatus === 'live' ? 'Live Self Check-In' : 'Auto-Saved'}
                     </span>
-                  </button>
+                  </span>
                 </div>
                 <p className="text-xs text-slate-400">
-                  Auto-saved locally • Click any Division tab to view teams or edit its assigned courts (e.g. Court 1–7)
+                  {isPlayerMode
+                    ? 'Player Self Check-In: Search your name or tap your team below to check in and see your court!'
+                    : 'Click any Division tab to view teams or edit its assigned courts (e.g. Court 1–7)'}
                 </p>
               </div>
             </div>
 
-            {/* Action Buttons */}
+            {/* Mode Switcher + Organizer Action Buttons */}
             <div className="flex items-center gap-2 flex-wrap">
-              <button
-                onClick={() => setShowSaveTournamentModal(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-xs sm:text-sm font-semibold text-emerald-300 border border-emerald-500/40 transition cursor-pointer"
-                title="Save tournament or switch between saved tournaments"
-              >
-                <Save className="w-4 h-4 text-emerald-400" />
-                <span>Save Tournament ({savedTournaments.length})</span>
-              </button>
-
-              <button
-                onClick={() => setEditingDivisionCourts(selectedDivision)}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-xs sm:text-sm font-medium text-slate-100 border border-slate-700 transition cursor-pointer"
-                title="Configure courts per division"
-              >
-                <Sliders className="w-4 h-4 text-emerald-400" />
-                <span>Assign Courts ({totalCourtsAvailable})</span>
-              </button>
+              {/* Player Self Check-In vs Organizer Toggle */}
+              <div className="inline-flex items-center bg-slate-800 p-1 rounded-xl border border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => setIsPlayerMode(true)}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    isPlayerMode
+                      ? 'bg-emerald-500 text-slate-950 shadow-2xs'
+                      : 'text-slate-300 hover:text-white'
+                  }`}
+                >
+                  <UserCheck className="w-3.5 h-3.5" />
+                  <span>Player Self Check-In</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsPlayerMode(false)}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    !isPlayerMode
+                      ? 'bg-white text-slate-950 shadow-2xs'
+                      : 'text-slate-300 hover:text-white'
+                  }`}
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>Organizer</span>
+                </button>
+              </div>
 
               <button
                 onClick={() => setShowIphoneModal(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-xs sm:text-sm font-medium text-slate-100 border border-slate-700 transition cursor-pointer"
-                title="Open on iPhone"
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-xs sm:text-sm font-semibold text-emerald-300 border border-emerald-500/40 transition cursor-pointer"
+                title="Share Player Self Check-In QR Code & Website Link"
               >
-                <Smartphone className="w-4 h-4 text-emerald-400" />
-                <span className="hidden md:inline">iPhone</span>
+                <QrCode className="w-4 h-4 text-emerald-400" />
+                <span>Player QR / Link</span>
               </button>
 
-              <button
-                onClick={() => {
-                  setUploadError(null);
-                  setShowUploadModal(true);
-                }}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-xs sm:text-sm font-semibold text-slate-950 transition shadow-sm cursor-pointer"
-                title="Upload multiple CSV files or select a folder"
-              >
-                <Upload className="w-4 h-4" />
-                <span>Upload CSVs / Folder</span>
-              </button>
+              {!isPlayerMode && (
+                <>
+                  <button
+                    onClick={() => setShowSaveTournamentModal(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-xs sm:text-sm font-semibold text-slate-100 border border-slate-700 transition cursor-pointer"
+                    title="Save tournament or switch between saved tournaments"
+                  >
+                    <Save className="w-4 h-4 text-emerald-400" />
+                    <span>Save ({savedTournaments.length})</span>
+                  </button>
+
+                  <button
+                    onClick={() => setEditingDivisionCourts(selectedDivision)}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-xs sm:text-sm font-medium text-slate-100 border border-slate-700 transition cursor-pointer"
+                    title="Configure courts per division"
+                  >
+                    <Sliders className="w-4 h-4 text-emerald-400" />
+                    <span>Assign Courts ({totalCourtsAvailable})</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setUploadError(null);
+                      setShowUploadModal(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-xs sm:text-sm font-semibold text-slate-950 transition shadow-sm cursor-pointer"
+                    title="Upload multiple CSV files or select a folder"
+                  >
+                    <Upload className="w-4 h-4" />
+                    <span>Upload CSVs</span>
+                  </button>
+                </>
+              )}
             </div>
           </div>
 
@@ -1064,29 +1195,31 @@ export function App() {
                 )}
               </div>
 
-              <div className="flex items-center gap-3">
-                {divisionsList.length > 1 && (
-                  <button
-                    onClick={() => handleRemoveDivision(selectedDivision)}
-                    className="text-xs text-slate-400 hover:text-rose-300 flex items-center gap-1 transition cursor-pointer"
-                    title={`Remove ${selectedDivision} division`}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">Remove Division</span>
-                  </button>
-                )}
+              {!isPlayerMode && (
+                <div className="flex items-center gap-3">
+                  {divisionsList.length > 1 && (
+                    <button
+                      onClick={() => handleRemoveDivision(selectedDivision)}
+                      className="text-xs text-slate-400 hover:text-rose-300 flex items-center gap-1 transition cursor-pointer"
+                      title={`Remove ${selectedDivision} division`}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Remove Division</span>
+                    </button>
+                  )}
 
-                {(stats.fullTeams > 0 || stats.partialTeams > 0) && (
-                  <button
-                    onClick={handleClearCheckIns}
-                    className="text-xs text-slate-400 hover:text-rose-300 flex items-center gap-1 transition cursor-pointer"
-                    title="Clear check-ins"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">Reset</span>
-                  </button>
-                )}
-              </div>
+                  {(stats.fullTeams > 0 || stats.partialTeams > 0) && (
+                    <button
+                      onClick={handleClearCheckIns}
+                      className="text-xs text-slate-400 hover:text-rose-300 flex items-center gap-1 transition cursor-pointer"
+                      title="Clear check-ins"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Reset</span>
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="w-full h-2 bg-slate-950 rounded-full overflow-hidden flex">
@@ -1111,13 +1244,14 @@ export function App() {
           <div className="max-w-5xl mx-auto flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-center justify-between">
             {/* Search Input */}
             <div className="relative flex-1">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <Search className="w-4 h-4 text-emerald-600 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
+                ref={searchInputRef}
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search player, team name, pool, or court..."
-                className="w-full pl-9 pr-9 py-2 bg-slate-100 hover:bg-slate-200/70 focus:bg-white rounded-xl text-sm border border-transparent focus:border-emerald-500 focus:outline-none transition"
+                placeholder="Player Self Check-In: Type your name or team name (searches all divisions)..."
+                className="w-full pl-9 pr-9 py-2.5 bg-slate-100 hover:bg-slate-200/70 focus:bg-white rounded-xl text-sm font-medium border border-slate-200 focus:border-emerald-500 focus:outline-none transition"
               />
               {searchQuery && (
                 <button
@@ -1175,6 +1309,37 @@ export function App() {
             </button>
           </div>
         )}
+
+        {/* Player Self Check-In Welcome & Quick Search Callout */}
+        <div className="bg-emerald-950 text-white rounded-2xl px-4 py-3 border border-emerald-700/70 flex flex-wrap items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-emerald-500 text-slate-950 flex items-center justify-center font-extrabold shrink-0">
+              <UserCheck className="w-4 h-4 stroke-[2.5]" />
+            </div>
+            <div>
+              <div className="text-xs sm:text-sm font-extrabold text-white">
+                Player Self Check-In — Find Your Team & Check In Below
+              </div>
+              <div className="text-[11px] sm:text-xs text-emerald-200/90">
+                Type your name in the search bar or tap your name/team to check in and see your assigned Pool & Court.
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                searchInputRef.current?.focus();
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              className="px-3 py-1.5 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-slate-950 text-xs font-extrabold transition cursor-pointer flex items-center gap-1.5"
+            >
+              <Search className="w-3.5 h-3.5" />
+              <span>Find My Name</span>
+            </button>
+          </div>
+        </div>
 
         {/* NOW CHECKING IN — Redesigned Boarding-Pass Style Team Check-In Card */}
         {activeTeam && (() => {
@@ -1607,24 +1772,30 @@ export function App() {
           onSwitchDivision={(div) => setEditingDivisionCourts(div)}
           onAutoAssignAll={handleAutoAssignAllCourts}
           onSaveDivisionRange={(div, startCourt, endCourt) => {
-            setTeams((prev) => applyCourtRangeToDivision(prev, div, startCourt, endCourt));
+            setTeams((prev) => {
+              const next = applyCourtRangeToDivision(prev, div, startCourt, endCourt);
+              broadcastFullRosterToLive(next, totalCourtsAvailable);
+              return next;
+            });
             setEditingDivisionCourts(null);
             setUploadSuccessBanner(
-              `Assigned Court ${formatCourtRangeLabel(startCourt, endCourt)} to ${div}`
+              `Assigned Court ${formatCourtRangeLabel(startCourt, endCourt)} to ${div} & synced live`
             );
             setTimeout(() => setUploadSuccessBanner(null), 4000);
           }}
         />
       )}
 
-      {/* Send to iPhone Modal */}
+      {/* Player Self Check-In QR Code & Website Link Modal */}
       {showIphoneModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 text-center">
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 text-center my-8">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
-                <Smartphone className="w-5 h-5 text-emerald-600" />
-                <h2 className="text-lg font-bold text-slate-900">Open on Your iPhone</h2>
+                <QrCode className="w-5 h-5 text-emerald-600" />
+                <h2 className="text-lg font-bold text-slate-900">
+                  Player Self Check-In Website & QR
+                </h2>
               </div>
               <button
                 onClick={() => setShowIphoneModal(false)}
@@ -1634,24 +1805,67 @@ export function App() {
               </button>
             </div>
 
-            <div className="mt-4 space-y-3 text-left text-sm text-slate-600">
-              <p>
-                <strong>Option 1 (GitHub Pages Live URL):</strong>
+            <div className="mt-4 space-y-3.5 text-left text-sm text-slate-600">
+              <p className="text-xs text-slate-500 text-center">
+                Players can scan this QR code or open the link on their phone to search their name, self-check in, and see their assigned Pool & Court in real time.
               </p>
-              <div className="p-3 rounded-xl bg-slate-900 text-emerald-400 font-mono font-bold text-center text-xs sm:text-sm select-all">
-                https://runwildlovestronglivefree.org/no_attitude_checkin/
+
+              {/* Scannable QR Code for Player Self Check-In URL */}
+              <div className="flex justify-center">
+                <div className="p-3 bg-white rounded-2xl border-2 border-emerald-500 shadow-sm inline-block">
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(
+                      'https://runwildlovestronglivefree.org/no_attitude_checkin/?mode=player'
+                    )}`}
+                    alt="Player Self Check-In QR Code"
+                    className="w-44 h-44 rounded-lg"
+                  />
+                </div>
               </div>
-              <p>
-                <strong>Option 2 (Local Wi-Fi):</strong>
-              </p>
-              <div className="p-3 rounded-xl bg-slate-100 text-slate-800 font-mono font-bold text-center text-sm select-all">
-                http://192.168.0.53:5173/
+
+              <div>
+                <div className="text-xs font-bold text-slate-700 mb-1">
+                  Player Self Check-In Website Link:
+                </div>
+                <div className="p-3 rounded-xl bg-slate-900 text-emerald-400 font-mono font-bold text-center text-xs select-all break-all">
+                  https://runwildlovestronglivefree.org/no_attitude_checkin/?mode=player
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard?.writeText(
+                      'https://runwildlovestronglivefree.org/no_attitude_checkin/?mode=player'
+                    );
+                    setUploadSuccessBanner('Copied Player Self Check-In link to clipboard!');
+                    setTimeout(() => setUploadSuccessBanner(null), 3500);
+                  }}
+                  className="py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs transition cursor-pointer"
+                >
+                  Copy Player Link
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    broadcastFullRosterToLive(teams, totalCourtsAvailable, tournamentName);
+                    setUploadSuccessBanner(
+                      `Published ${teams.length} teams & court assignments to live Player Self Check-In website!`
+                    );
+                    setTimeout(() => setUploadSuccessBanner(null), 4000);
+                  }}
+                  className="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition cursor-pointer"
+                >
+                  Publish Roster Live
+                </button>
               </div>
             </div>
 
             <button
               onClick={() => setShowIphoneModal(false)}
-              className="mt-5 w-full py-2.5 rounded-xl bg-slate-900 text-white font-semibold text-sm hover:bg-slate-800 cursor-pointer"
+              className="mt-4 w-full py-2.5 rounded-xl bg-slate-900 text-white font-semibold text-sm hover:bg-slate-800 cursor-pointer"
             >
               Done
             </button>
