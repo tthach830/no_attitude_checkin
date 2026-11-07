@@ -11,18 +11,15 @@ import {
   X,
   FileSpreadsheet,
   Sparkles,
-  Clock,
   MapPin,
   AlertCircle,
   FolderOpen,
-  Layers,
   Trash2,
   Sliders,
   Save,
   BookmarkCheck,
   Download,
   QrCode,
-  Wifi,
   ShieldCheck,
 } from 'lucide-react';
 import type { TeamEntry, FilterStatus, SavedTournament } from './types';
@@ -981,132 +978,146 @@ export function App() {
         </div>
       )}
 
-      {/* Header */}
+      {/* Header — Mobile-First Compact Layout */}
       <header className="bg-slate-900 text-white pt-safe sticky top-0 z-30 shadow-md">
-        <div className="max-w-5xl mx-auto px-4 pt-3 pb-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-400 shrink-0">
-                <UserCheck className="w-5 h-5" />
+        <div className="max-w-5xl mx-auto px-3 sm:px-4 pt-2.5 pb-2">
+          {/* Top Row: Brand + Title on Left | Mode Switch + QR Button on Right */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-400 shrink-0">
+                <UserCheck className="w-4 h-4" />
               </div>
-              <div>
-                <div className="flex items-center gap-2 flex-wrap">
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
                   <button
                     onClick={() => !isPlayerMode && setShowSaveTournamentModal(true)}
-                    className="text-lg sm:text-xl font-bold tracking-tight hover:text-emerald-300 transition flex items-center gap-1.5 cursor-pointer"
+                    className="text-sm sm:text-lg font-extrabold tracking-tight hover:text-emerald-300 transition flex items-center gap-1 truncate cursor-pointer"
                     title="Tournament Name"
                   >
-                    <span>{tournamentName}</span>
-                    {!isPlayerMode && <Edit3 className="w-3.5 h-3.5 text-slate-400" />}
+                    <span className="truncate">{tournamentName}</span>
+                    {!isPlayerMode && <Edit3 className="w-3 h-3 text-slate-400 shrink-0" />}
                   </button>
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                    <Layers className="w-3 h-3" />
-                    {divisionsList.length} Divisions • {teams.length} Teams • {totalCourtsAvailable} Courts
-                  </span>
                   <span
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-800 text-emerald-400 border border-slate-700"
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0"
                     title={`Live Self Check-In Sync Active • Last saved at ${new Date(lastSavedAt).toLocaleTimeString()}`}
                   >
-                    <Wifi className="w-3 h-3 text-emerald-400" />
-                    <span>
-                      {liveSyncStatus === 'live' ? 'Live Self Check-In' : 'Auto-Saved'}
-                    </span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span>{liveSyncStatus === 'live' ? 'LIVE' : 'SAVED'}</span>
                   </span>
                 </div>
-                <p className="text-xs text-slate-400">
-                  {isPlayerMode
-                    ? 'Player Self Check-In: Search your name or tap your team below to check in and see your court!'
-                    : 'Click any Division tab to view teams or edit its assigned courts (e.g. Court 1–7)'}
-                </p>
+                <div className="flex items-center gap-1.5 text-[11px] text-slate-400 truncate">
+                  <span>{divisionsList.length} Divs</span>
+                  <span>•</span>
+                  <span>{teams.length} Teams</span>
+                  <span>•</span>
+                  <span className="text-emerald-400 font-semibold">{totalCourtsAvailable} Courts</span>
+                </div>
               </div>
             </div>
 
-            {/* Mode Switcher + Organizer Action Buttons */}
-            <div className="flex items-center gap-2 flex-wrap">
-              {/* Player Self Check-In vs Organizer Toggle */}
-              <div className="inline-flex items-center bg-slate-800 p-1 rounded-xl border border-slate-700">
+            {/* Right Controls: Player / Admin Switch + QR Button */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              <div className="inline-flex items-center bg-slate-800 p-0.5 rounded-xl border border-slate-700">
                 <button
                   type="button"
                   onClick={() => setIsPlayerMode(true)}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                  className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
                     isPlayerMode
                       ? 'bg-emerald-500 text-slate-950 shadow-2xs'
                       : 'text-slate-300 hover:text-white'
                   }`}
                 >
                   <UserCheck className="w-3.5 h-3.5" />
-                  <span>Player Self Check-In</span>
+                  <span>Check-In</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setIsPlayerMode(false)}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                  className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
                     !isPlayerMode
                       ? 'bg-white text-slate-950 shadow-2xs'
                       : 'text-slate-300 hover:text-white'
                   }`}
                 >
                   <ShieldCheck className="w-3.5 h-3.5" />
-                  <span>Organizer</span>
+                  <span>Admin</span>
                 </button>
               </div>
 
               <button
                 onClick={() => setShowIphoneModal(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-xs sm:text-sm font-semibold text-emerald-300 border border-emerald-500/40 transition cursor-pointer"
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-xs font-bold text-emerald-300 border border-emerald-500/40 transition cursor-pointer"
                 title="Share Player Self Check-In QR Code & Website Link"
               >
                 <QrCode className="w-4 h-4 text-emerald-400" />
-                <span>Player QR / Link</span>
+                <span className="hidden sm:inline">QR / Link</span>
               </button>
-
-              {!isPlayerMode && (
-                <>
-                  <button
-                    onClick={() => setShowSaveTournamentModal(true)}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-xs sm:text-sm font-semibold text-slate-100 border border-slate-700 transition cursor-pointer"
-                    title="Save tournament or switch between saved tournaments"
-                  >
-                    <Save className="w-4 h-4 text-emerald-400" />
-                    <span>Save ({savedTournaments.length})</span>
-                  </button>
-
-                  <button
-                    onClick={() => setEditingDivisionCourts(selectedDivision)}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-xs sm:text-sm font-medium text-slate-100 border border-slate-700 transition cursor-pointer"
-                    title="Configure courts per division"
-                  >
-                    <Sliders className="w-4 h-4 text-emerald-400" />
-                    <span>Assign Courts ({totalCourtsAvailable})</span>
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setUploadError(null);
-                      setShowUploadModal(true);
-                    }}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-xs sm:text-sm font-semibold text-slate-950 transition shadow-sm cursor-pointer"
-                    title="Upload multiple CSV files or select a folder"
-                  >
-                    <Upload className="w-4 h-4" />
-                    <span>Upload CSVs</span>
-                  </button>
-                </>
-              )}
             </div>
           </div>
 
-          {/* Division Tabs Strip — Click a Division to switch, or click its Court badge / selected tab to edit courts */}
-          <div className="mt-3 flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+          {/* Organizer Action Bar — Scrollable Single Row (Only visible in Admin mode) */}
+          {!isPlayerMode && (
+            <div className="mt-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+              <button
+                onClick={() => {
+                  setUploadError(null);
+                  setShowUploadModal(true);
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-xs font-extrabold text-slate-950 transition shadow-2xs whitespace-nowrap cursor-pointer"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>Upload CSVs</span>
+              </button>
+
+              <button
+                onClick={() => setEditingDivisionCourts(selectedDivision)}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-xs font-semibold text-slate-100 border border-slate-700 transition whitespace-nowrap cursor-pointer"
+              >
+                <Sliders className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Courts ({totalCourtsAvailable})</span>
+              </button>
+
+              <button
+                onClick={() => setShowSaveTournamentModal(true)}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-xs font-semibold text-slate-100 border border-slate-700 transition whitespace-nowrap cursor-pointer"
+              >
+                <Save className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Saved ({savedTournaments.length})</span>
+              </button>
+
+              {(stats.fullTeams > 0 || stats.partialTeams > 0) && (
+                <button
+                  onClick={handleClearCheckIns}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-rose-950/60 text-xs font-semibold text-slate-300 hover:text-rose-300 border border-slate-700 transition whitespace-nowrap cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Reset</span>
+                </button>
+              )}
+
+              {divisionsList.length > 1 && (
+                <button
+                  onClick={() => handleRemoveDivision(selectedDivision)}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-rose-950/60 text-xs font-semibold text-slate-300 hover:text-rose-300 border border-slate-700 transition whitespace-nowrap cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Remove Div</span>
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Division Tabs Strip — Swipeable Horizontal Pills with Court Badge */}
+          <div className="mt-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
             {divisionsList.map((div) => {
               const isSelected = selectedDivision === div.division;
               const isAllReady = div.total > 0 && div.checkedIn === div.total;
               return (
                 <div
                   key={div.division}
-                  className={`inline-flex items-center rounded-xl border transition ${
+                  className={`inline-flex items-center rounded-xl border transition shrink-0 ${
                     isSelected
-                      ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-sm'
+                      ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-xs'
                       : isAllReady
                       ? 'bg-emerald-950/80 text-emerald-300 border-emerald-700 hover:bg-emerald-900/70'
                       : 'bg-slate-800/90 text-slate-200 border-slate-700 hover:bg-slate-800'
@@ -1122,16 +1133,11 @@ export function App() {
                         if (firstInDiv) setActiveTeamId(firstInDiv.id);
                       }
                     }}
-                    className="px-3.5 py-2 text-xs sm:text-sm font-bold whitespace-nowrap flex items-center gap-2 cursor-pointer"
-                    title={
-                      isSelected
-                        ? `Click to edit courts for ${div.division}`
-                        : `Switch to ${div.division}`
-                    }
+                    className="px-2.5 py-1.5 text-xs font-extrabold whitespace-nowrap flex items-center gap-1.5 cursor-pointer"
                   >
                     <span>{div.division}</span>
                     <span
-                      className={`px-2 py-0.5 rounded-full text-xs font-extrabold ${
+                      className={`px-1.5 py-0.5 rounded-full text-[11px] font-extrabold ${
                         isSelected
                           ? 'bg-slate-950/20 text-slate-950'
                           : isAllReady
@@ -1139,119 +1145,61 @@ export function App() {
                           : 'bg-slate-700 text-slate-300'
                       }`}
                     >
-                      {div.checkedIn}/{div.total} {isAllReady ? '✓' : ''}
+                      {div.checkedIn}/{div.total}
                     </span>
                   </button>
 
-                  {/* Clickable Court Assignment Pill on Each Division Tab */}
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       setSelectedDivision(div.division);
                       setEditingDivisionCourts(div.division);
                     }}
-                    className={`mr-2 px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition cursor-pointer ${
+                    className={`mr-1.5 px-2 py-0.5 rounded-lg text-[11px] font-bold flex items-center gap-1 transition cursor-pointer ${
                       isSelected
                         ? 'bg-slate-950 text-emerald-400 hover:bg-slate-800'
                         : 'bg-slate-950/60 text-emerald-300 hover:bg-slate-950'
                     }`}
                     title={`Edit assigned courts for ${div.division}`}
                   >
-                    <MapPin className="w-3 h-3" />
-                    <span>Court {div.courtLabel}</span>
-                    <Edit3 className="w-3 h-3 opacity-80" />
+                    <span>Ct {div.courtLabel}</span>
+                    <Edit3 className="w-2.5 h-2.5 opacity-80" />
                   </button>
                 </div>
               );
             })}
           </div>
+        </div>
 
-          {/* Live Progress Bar & Division Court Assignment Banner */}
-          <div className="mt-2.5 bg-slate-800/90 rounded-2xl p-2.5 px-3 border border-slate-700/80">
-            <div className="flex items-center justify-between text-xs sm:text-sm mb-1.5 flex-wrap gap-2">
-              <div className="flex items-center gap-3 flex-wrap">
-                <span className="font-semibold text-white flex items-center gap-1.5">
-                  <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
-                  {selectedDivision}: {stats.fullTeams} / {stats.totalTeams} Teams Checked In (
-                  {stats.progressPct}%)
-                </span>
-
-                {currentDivisionMeta && (
-                  <button
-                    onClick={() => setEditingDivisionCourts(selectedDivision)}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold transition cursor-pointer"
-                  >
-                    <MapPin className="w-3 h-3" />
-                    <span>Assigned: Court {currentDivisionMeta.courtLabel}</span>
-                    <Edit3 className="w-3 h-3" />
-                  </button>
-                )}
-
-                {stats.partialTeams > 0 && (
-                  <span className="text-amber-300 font-medium flex items-center gap-1">
-                    <Clock className="w-3.5 h-3.5" />
-                    {stats.partialTeams} Partial (1/2 here)
-                  </span>
-                )}
-              </div>
-
-              {!isPlayerMode && (
-                <div className="flex items-center gap-3">
-                  {divisionsList.length > 1 && (
-                    <button
-                      onClick={() => handleRemoveDivision(selectedDivision)}
-                      className="text-xs text-slate-400 hover:text-rose-300 flex items-center gap-1 transition cursor-pointer"
-                      title={`Remove ${selectedDivision} division`}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span className="hidden sm:inline">Remove Division</span>
-                    </button>
-                  )}
-
-                  {(stats.fullTeams > 0 || stats.partialTeams > 0) && (
-                    <button
-                      onClick={handleClearCheckIns}
-                      className="text-xs text-slate-400 hover:text-rose-300 flex items-center gap-1 transition cursor-pointer"
-                      title="Clear check-ins"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      <span className="hidden sm:inline">Reset</span>
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="w-full h-2 bg-slate-950 rounded-full overflow-hidden flex">
-              <div
-                className="bg-emerald-500 transition-all duration-300"
-                style={{
-                  width: `${stats.totalTeams ? (stats.fullTeams / stats.totalTeams) * 100 : 0}%`,
-                }}
-              />
-              <div
-                className="bg-amber-400 transition-all duration-300"
-                style={{
-                  width: `${stats.totalTeams ? (stats.partialTeams / stats.totalTeams) * 100 : 0}%`,
-                }}
-              />
-            </div>
-          </div>
+        {/* Thin Live Progress Bar along bottom of dark header */}
+        <div className="w-full h-1 bg-slate-950 flex overflow-hidden">
+          <div
+            className="bg-emerald-500 transition-all duration-300"
+            style={{
+              width: `${stats.totalTeams ? (stats.fullTeams / stats.totalTeams) * 100 : 0}%`,
+            }}
+          />
+          <div
+            className="bg-amber-400 transition-all duration-300"
+            style={{
+              width: `${stats.totalTeams ? (stats.partialTeams / stats.totalTeams) * 100 : 0}%`,
+            }}
+          />
         </div>
 
         {/* Sticky Search & Filter Subbar */}
-        <div className="bg-white border-b border-slate-200 text-slate-900 px-4 py-2.5 shadow-xs">
-          <div className="max-w-5xl mx-auto flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-center justify-between">
+        <div className="bg-white border-b border-slate-200 text-slate-900 px-3 sm:px-4 py-2 shadow-2xs">
+          <div className="max-w-5xl mx-auto flex flex-col sm:flex-row gap-2 items-stretch sm:items-center justify-between">
             {/* Search Input */}
             <div className="relative flex-1">
-              <Search className="w-4 h-4 text-emerald-600 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <Search className="w-4 h-4 text-emerald-600 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 ref={searchInputRef}
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Player Self Check-In: Type your name or team name (searches all divisions)..."
-                className="w-full pl-9 pr-9 py-2.5 bg-slate-100 hover:bg-slate-200/70 focus:bg-white rounded-xl text-sm font-medium border border-slate-200 focus:border-emerald-500 focus:outline-none transition"
+                placeholder="Search your name or team name..."
+                className="w-full pl-9 pr-8 py-2 bg-slate-100 hover:bg-slate-200/70 focus:bg-white rounded-xl text-sm font-medium border border-slate-200 focus:border-emerald-500 focus:outline-none transition"
               />
               {searchQuery && (
                 <button
@@ -1264,11 +1212,11 @@ export function App() {
             </div>
 
             {/* Status Filter Pills */}
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5 sm:pb-0">
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
               {(
                 [
                   { id: 'all', label: `All (${stats.totalTeams})` },
-                  { id: 'pending', label: `Not Checked In (${stats.pendingTeams})` },
+                  { id: 'pending', label: `Pending (${stats.pendingTeams})` },
                   { id: 'partial', label: `1/2 Here (${stats.partialTeams})` },
                   { id: 'checked-in', label: `Checked In (${stats.fullTeams})` },
                 ] as { id: FilterStatus; label: string }[]
@@ -1278,9 +1226,9 @@ export function App() {
                   <button
                     key={tab.id}
                     onClick={() => setStatusFilter(tab.id)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
+                    className={`px-2.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer ${
                       active
-                        ? 'bg-slate-900 text-white shadow-xs'
+                        ? 'bg-slate-900 text-white shadow-2xs'
                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                     }`}
                   >
@@ -1294,9 +1242,9 @@ export function App() {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-5xl w-full mx-auto px-4 py-5 flex-1 space-y-5">
+      <main className="max-w-5xl w-full mx-auto px-3 sm:px-4 py-3.5 sm:py-5 flex-1 space-y-4">
         {uploadSuccessBanner && (
-          <div className="bg-emerald-900 text-white px-4 py-3 rounded-2xl shadow-md flex items-center justify-between text-sm font-medium">
+          <div className="bg-emerald-900 text-white px-3.5 py-2.5 rounded-2xl shadow-md flex items-center justify-between text-xs sm:text-sm font-medium">
             <div className="flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
               <span>{uploadSuccessBanner}</span>
@@ -1310,38 +1258,7 @@ export function App() {
           </div>
         )}
 
-        {/* Player Self Check-In Welcome & Quick Search Callout */}
-        <div className="bg-emerald-950 text-white rounded-2xl px-4 py-3 border border-emerald-700/70 flex flex-wrap items-center justify-between gap-3 shadow-xs">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-emerald-500 text-slate-950 flex items-center justify-center font-extrabold shrink-0">
-              <UserCheck className="w-4 h-4 stroke-[2.5]" />
-            </div>
-            <div>
-              <div className="text-xs sm:text-sm font-extrabold text-white">
-                Player Self Check-In — Find Your Team & Check In Below
-              </div>
-              <div className="text-[11px] sm:text-xs text-emerald-200/90">
-                Type your name in the search bar or tap your name/team to check in and see your assigned Pool & Court.
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                searchInputRef.current?.focus();
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-              }}
-              className="px-3 py-1.5 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-slate-950 text-xs font-extrabold transition cursor-pointer flex items-center gap-1.5"
-            >
-              <Search className="w-3.5 h-3.5" />
-              <span>Find My Name</span>
-            </button>
-          </div>
-        </div>
-
-        {/* NOW CHECKING IN — Redesigned Boarding-Pass Style Team Check-In Card */}
+        {/* NOW CHECKING IN — Mobile-Optimized Boarding-Pass Card */}
         {activeTeam && (() => {
           const activeStatus = getTeamStatus(activeTeam);
           const isAllChecked = activeStatus === 'checked-in';
@@ -1351,15 +1268,12 @@ export function App() {
             activeTeam.divisionCourts || currentDivisionMeta?.courtLabel || activeTeam.courts;
 
           return (
-            <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 text-white rounded-3xl p-5 sm:p-6 shadow-xl border-2 border-emerald-500/80 transition-all">
-              {/* Subtle ambient top-right glow */}
-              <div className="pointer-events-none absolute -top-20 -right-20 w-64 h-64 rounded-full bg-emerald-500/10 blur-3xl" />
-
-              {/* Top Row: Status Pill + Division Courts Pill on Left, Edit & Close Buttons on Right */}
-              <div className="relative flex items-center justify-between gap-3 flex-wrap pb-4 border-b border-slate-800/90">
-                <div className="flex items-center gap-2 flex-wrap">
+            <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 text-white rounded-3xl p-4 sm:p-5 shadow-xl border-2 border-emerald-500/80 transition-all">
+              {/* Top Row: Status Pill + Division Pill on Left, Edit & Close on Right */}
+              <div className="relative flex items-center justify-between gap-2 pb-3 border-b border-slate-800/90">
+                <div className="flex items-center gap-1.5 flex-wrap min-w-0">
                   <span
-                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold uppercase tracking-wider shadow-xs ${
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-extrabold uppercase tracking-wider shadow-2xs ${
                       isAllChecked
                         ? 'bg-emerald-400 text-slate-950'
                         : isHalfChecked
@@ -1367,12 +1281,12 @@ export function App() {
                         : 'bg-emerald-500 text-slate-950'
                     }`}
                   >
-                    <UserCheck className="w-3.5 h-3.5 stroke-[2.5]" />
+                    <UserCheck className="w-3 h-3 stroke-[2.5]" />
                     <span>
                       {isAllChecked
-                        ? 'Team Checked In'
+                        ? 'Checked In ✓'
                         : isHalfChecked
-                        ? `Checking In (${checkedPlayersCount}/${activeTeam.players.length} Here)`
+                        ? `${checkedPlayersCount}/${activeTeam.players.length} Here`
                         : 'Now Checking In'}
                     </span>
                   </span>
@@ -1380,31 +1294,24 @@ export function App() {
                   <button
                     type="button"
                     onClick={() => setEditingDivisionCourts(activeTeam.division)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-indigo-500/20 hover:bg-indigo-500/35 text-indigo-200 border border-indigo-400/30 transition cursor-pointer"
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-indigo-500/20 hover:bg-indigo-500/35 text-indigo-200 border border-indigo-400/30 transition truncate cursor-pointer"
                     title="Click to edit assigned courts for this division"
                   >
-                    <span>{activeTeam.division}</span>
+                    <span className="truncate">{activeTeam.division}</span>
                     <span className="text-indigo-400">•</span>
-                    <span className="text-indigo-100">Courts {divCourtLabel}</span>
-                    <Edit3 className="w-3 h-3 opacity-80" />
+                    <span className="text-indigo-100 shrink-0">Ct {divCourtLabel}</span>
+                    <Edit3 className="w-2.5 h-2.5 opacity-80 shrink-0" />
                   </button>
-
-                  {toastMessage && (
-                    <span className="text-xs font-semibold text-emerald-300 bg-emerald-500/10 border border-emerald-500/25 px-2.5 py-0.5 rounded-full">
-                      {toastMessage.statusText}
-                    </span>
-                  )}
                 </div>
 
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1 shrink-0">
                   <button
                     type="button"
                     onClick={() => setEditingTeam(activeTeam)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-800 border border-slate-700/80 transition cursor-pointer"
+                    className="p-1.5 rounded-xl text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-800 border border-slate-700/80 transition cursor-pointer"
                     title="Edit team details"
                   >
                     <Edit3 className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">Edit</span>
                   </button>
                   <button
                     type="button"
@@ -1417,128 +1324,121 @@ export function App() {
                 </div>
               </div>
 
-              {/* Main Body: Left = Team Name & Partner Check-In Cards | Right = Pool/Court Ticket + Full Team CTA */}
-              <div className="relative mt-4 grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
-                {/* Left Column: Team Name & Individual Partner Cards */}
-                <div className="lg:col-span-7 flex flex-col justify-between space-y-4">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] uppercase tracking-widest text-emerald-400 font-bold">
-                        Team Name
+              {/* Team Name + Pool & Court Callout Row */}
+              <div className="mt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] uppercase tracking-widest text-emerald-400 font-extrabold">
+                      Team Name
+                    </span>
+                    {toastMessage && (
+                      <span className="text-[11px] font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded-full">
+                        {toastMessage.statusText}
                       </span>
-                      {activeTeam.notes && (
-                        <span className="text-[11px] font-semibold text-amber-300 bg-amber-500/15 border border-amber-400/30 px-2 py-0.5 rounded-md">
-                          Note: {activeTeam.notes}
-                        </span>
-                      )}
-                    </div>
-                    <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white mt-1 leading-tight">
-                      {activeTeam.rawTeamName || formatDisplayTeamName(activeTeam)}
-                    </h2>
+                    )}
+                    {activeTeam.notes && (
+                      <span className="text-[10px] font-semibold text-amber-300 bg-amber-500/15 border border-amber-400/30 px-2 py-0.5 rounded-md">
+                        Note: {activeTeam.notes}
+                      </span>
+                    )}
                   </div>
-
-                  {/* Interactive Partner Check-In Cards */}
-                  <div>
-                    <div className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold mb-2">
-                      Players ({checkedPlayersCount} of {activeTeam.players.length} Checked In — Tap Individual or Full Team)
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                      {activeTeam.players.map((p, idx) => (
-                        <button
-                          key={p.id}
-                          type="button"
-                          onClick={() => togglePlayerCheckIn(activeTeam.id, p.id)}
-                          className={`group flex items-center justify-between gap-3 px-3.5 py-3 rounded-2xl border text-left transition active:scale-[0.99] cursor-pointer ${
-                            p.checkedIn
-                              ? 'bg-emerald-500/20 border-emerald-400/70 text-white shadow-sm'
-                              : 'bg-slate-800/75 hover:bg-slate-800 border-slate-700/90 text-slate-200'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            {p.checkedIn ? (
-                              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-                            ) : (
-                              <Circle className="w-5 h-5 text-slate-400 group-hover:text-slate-200 shrink-0" />
-                            )}
-                            <div className="min-w-0">
-                              <div className="text-sm font-bold truncate text-white">
-                                {p.name}
-                              </div>
-                              <div
-                                className={`text-[11px] font-medium ${
-                                  p.checkedIn ? 'text-emerald-300' : 'text-slate-400'
-                                }`}
-                              >
-                                {p.checkedIn ? 'Checked In ✓' : `Player ${idx + 1} • Tap to check in`}
-                              </div>
-                            </div>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                  <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight text-white mt-0.5 leading-snug">
+                    {activeTeam.rawTeamName || formatDisplayTeamName(activeTeam)}
+                  </h2>
                 </div>
 
-                {/* Right Column: Pool & Court Assignment Pass + Primary Check-In CTA */}
-                <div className="lg:col-span-5 flex flex-col justify-between bg-slate-950/65 border border-slate-800/90 rounded-2xl p-4 space-y-3.5">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3">
-                      <div className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
-                        Pool Assignment
-                      </div>
-                      <div className="text-lg sm:text-xl font-extrabold text-white mt-0.5">
-                        {activeTeam.poolName}
-                      </div>
-                      <div className="text-[11px] text-slate-400 truncate mt-0.5">
-                        {activeTeam.division}
-                      </div>
+                {/* Compact Side-by-Side Pool & Court Tiles */}
+                <div className="grid grid-cols-2 gap-2 shrink-0 sm:min-w-[240px]">
+                  <div className="bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2">
+                    <div className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
+                      Pool
                     </div>
-
-                    <button
-                      type="button"
-                      onClick={() => setEditingDivisionCourts(activeTeam.division)}
-                      className="bg-emerald-950/40 hover:bg-emerald-950/70 border border-emerald-500/40 rounded-xl p-3 text-left transition cursor-pointer group"
-                      title="Click to edit assigned courts"
-                    >
-                      <div className="flex items-center justify-between text-[10px] uppercase tracking-wider font-bold text-emerald-300">
-                        <span>Assigned Court</span>
-                        <Edit3 className="w-3 h-3 opacity-75 group-hover:opacity-100" />
-                      </div>
-                      <div className="text-lg sm:text-xl font-extrabold text-emerald-400 mt-0.5 flex items-center gap-1">
-                        <MapPin className="w-4 h-4 shrink-0" />
-                        <span>Court {activeTeam.courts}</span>
-                      </div>
-                      <div className="text-[11px] text-emerald-300/70 truncate mt-0.5">
-                        Div Courts {divCourtLabel}
-                      </div>
-                    </button>
+                    <div className="text-sm sm:text-base font-extrabold text-white">
+                      {activeTeam.poolName}
+                    </div>
                   </div>
 
                   <button
                     type="button"
-                    onClick={() => toggleFullTeamCheckIn(activeTeam.id)}
-                    className={`w-full py-3.5 px-5 rounded-xl font-extrabold text-sm flex items-center justify-center gap-2 transition active:scale-[0.99] shadow-md cursor-pointer ${
-                      isAllChecked
-                        ? 'bg-emerald-500 text-slate-950 hover:bg-emerald-400'
-                        : 'bg-white text-slate-950 hover:bg-emerald-50'
-                    }`}
+                    onClick={() => setEditingDivisionCourts(activeTeam.division)}
+                    className="bg-emerald-950/50 hover:bg-emerald-950/80 border border-emerald-500/40 rounded-xl px-3 py-2 text-left transition cursor-pointer"
+                    title="Click to edit assigned courts"
                   >
-                    <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
-                    <span>
-                      {isAllChecked ? 'Full Team Checked In ✓' : 'Mark Full Team Checked In'}
-                    </span>
+                    <div className="flex items-center justify-between text-[10px] uppercase tracking-wider font-bold text-emerald-300">
+                      <span>Court</span>
+                      <Edit3 className="w-2.5 h-2.5 opacity-75" />
+                    </div>
+                    <div className="text-sm sm:text-base font-extrabold text-emerald-400 flex items-center gap-1">
+                      <MapPin className="w-3.5 h-3.5 shrink-0" />
+                      <span>Ct {activeTeam.courts}</span>
+                    </div>
                   </button>
                 </div>
               </div>
+
+              {/* 2-Column Partner Tap Grid (Side-by-Side on Phone!) */}
+              <div className="mt-3">
+                <div className="text-[11px] text-slate-400 font-semibold mb-1.5">
+                  Tap your name to check in ({checkedPlayersCount}/{activeTeam.players.length} here):
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {activeTeam.players.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => togglePlayerCheckIn(activeTeam.id, p.id)}
+                      className={`group flex items-center gap-2 px-3 py-2.5 rounded-xl border text-left transition active:scale-[0.98] cursor-pointer ${
+                        p.checkedIn
+                          ? 'bg-emerald-500/20 border-emerald-400/80 text-white shadow-2xs'
+                          : 'bg-slate-800/80 hover:bg-slate-800 border-slate-700/90 text-slate-200'
+                      }`}
+                    >
+                      {p.checkedIn ? (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      ) : (
+                        <Circle className="w-4 h-4 text-slate-400 group-hover:text-slate-200 shrink-0" />
+                      )}
+                      <div className="min-w-0">
+                        <div className="text-xs sm:text-sm font-bold truncate text-white">
+                          {p.name}
+                        </div>
+                        <div
+                          className={`text-[10px] font-medium truncate ${
+                            p.checkedIn ? 'text-emerald-300' : 'text-slate-400'
+                          }`}
+                        >
+                          {p.checkedIn ? 'Checked In ✓' : 'Tap to check in'}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Full-Width 1-Tap Check-In Button */}
+              <button
+                type="button"
+                onClick={() => toggleFullTeamCheckIn(activeTeam.id)}
+                className={`mt-3 w-full py-3 px-4 rounded-xl font-extrabold text-sm flex items-center justify-center gap-2 transition active:scale-[0.99] shadow-md cursor-pointer ${
+                  isAllChecked
+                    ? 'bg-emerald-500 text-slate-950 hover:bg-emerald-400'
+                    : 'bg-white text-slate-950 hover:bg-emerald-50'
+                }`}
+              >
+                <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
+                <span>
+                  {isAllChecked ? 'Full Team Checked In ✓' : 'Mark Full Team Checked In'}
+                </span>
+              </button>
             </div>
           );
         })()}
 
         {groupedByDivisionAndPool.length === 0 ? (
-          <div className="bg-white rounded-3xl p-10 text-center border border-slate-200 shadow-xs my-6">
-            <Users className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-            <h3 className="text-lg font-bold text-slate-800">No Matching Teams</h3>
-            <p className="text-sm text-slate-500 mt-1">
+          <div className="bg-white rounded-3xl p-8 text-center border border-slate-200 shadow-xs my-4">
+            <Users className="w-10 h-10 text-slate-300 mx-auto mb-2.5" />
+            <h3 className="text-base font-bold text-slate-800">No Matching Teams</h3>
+            <p className="text-xs text-slate-500 mt-1">
               Try clearing your search filter or switching the status tab above.
             </p>
             {(searchQuery || statusFilter !== 'all') && (
@@ -1547,7 +1447,7 @@ export function App() {
                   setSearchQuery('');
                   setStatusFilter('all');
                 }}
-                className="mt-4 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 transition cursor-pointer"
+                className="mt-3 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 transition cursor-pointer"
               >
                 Reset Search & Filter
               </button>
@@ -1565,53 +1465,55 @@ export function App() {
               >
                 {/* Pool & Division Group Header */}
                 <div
-                  className={`px-4 py-3 border-b flex flex-wrap items-center justify-between gap-2 ${
+                  className={`px-3.5 py-2.5 border-b flex items-center justify-between gap-2 ${
                     isPoolComplete
                       ? 'bg-emerald-50/90 border-emerald-200'
-                      : 'bg-slate-50/80 border-slate-200/80'
+                      : 'bg-slate-50/90 border-slate-200/80'
                   }`}
                 >
-                  <div className="flex items-center gap-2.5 flex-wrap">
+                  <div className="flex items-center gap-2 flex-wrap min-w-0">
                     <button
                       onClick={() => setEditingDivisionCourts(group.division)}
-                      className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-xs font-extrabold border cursor-pointer ${getDivisionColorClass(
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-extrabold border cursor-pointer ${getDivisionColorClass(
                         group.division
                       )}`}
                       title="Click to edit courts for this division"
                     >
-                      <span>{group.division}</span>
-                      <Edit3 className="w-3 h-3 opacity-70" />
+                      <span className="truncate">{group.division}</span>
+                      <Edit3 className="w-2.5 h-2.5 opacity-70 shrink-0" />
                     </button>
 
-                    <span className="font-bold text-slate-900 text-base">{group.poolName}</span>
+                    <span className="font-extrabold text-slate-900 text-sm sm:text-base">
+                      {group.poolName}
+                    </span>
 
                     {group.courtsLabel && group.courtsLabel !== '-' && (
                       <button
                         onClick={() => setEditingDivisionCourts(group.division)}
-                        className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-white cursor-pointer"
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-900 hover:bg-slate-800 text-white cursor-pointer"
                         title="Click to edit division court assignment"
                       >
-                        <MapPin className="w-3 h-3 text-emerald-400" />
-                        <span>Court {group.courtsLabel}</span>
+                        <MapPin className="w-2.5 h-2.5 text-emerald-400" />
+                        <span>Ct {group.courtsLabel}</span>
                       </button>
                     )}
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="shrink-0">
                     {isPoolComplete ? (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-600 text-white shadow-2xs">
-                        <Sparkles className="w-3.5 h-3.5" />
-                        Court Ready ({poolMeta?.checkedIn}/{poolMeta?.total})
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-600 text-white">
+                        <Sparkles className="w-3 h-3" />
+                        <span>Ready ({poolMeta?.checkedIn}/{poolMeta?.total})</span>
                       </span>
                     ) : (
-                      <span className="text-xs font-semibold text-slate-600 bg-white px-2.5 py-1 rounded-full border border-slate-200">
-                        {poolMeta?.checkedIn ?? 0} of {poolMeta?.total ?? group.teams.length} Teams Ready
+                      <span className="text-[11px] font-bold text-slate-600 bg-white px-2.5 py-0.5 rounded-full border border-slate-200">
+                        {poolMeta?.checkedIn ?? 0}/{poolMeta?.total ?? group.teams.length} Ready
                       </span>
                     )}
                   </div>
                 </div>
 
-                {/* Teams List */}
+                {/* Teams List — Clean Mobile Cards */}
                 <div className="divide-y divide-slate-100">
                   {group.teams.map((team) => {
                     const status = getTeamStatus(team);
@@ -1623,79 +1525,73 @@ export function App() {
                       <div
                         key={team.id}
                         onClick={() => setActiveTeamId(team.id)}
-                        className={`p-4 transition-colors cursor-pointer ${
+                        className={`p-3.5 sm:p-4 transition-colors cursor-pointer ${
                           isCurrentlyCheckingIn
-                            ? 'ring-2 ring-inset ring-emerald-500 bg-emerald-50/60'
+                            ? 'ring-2 ring-inset ring-emerald-500 bg-emerald-50/50'
                             : isFull
-                            ? 'bg-emerald-50/35'
+                            ? 'bg-emerald-50/30'
                             : isPartial
                             ? 'bg-amber-50/35'
                             : 'bg-white hover:bg-slate-50/60'
                         }`}
                       >
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3.5">
-                          {/* Left: Team Name from CSV, Pool/Court Pills & Individual Player Tap Chips */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                          {/* Left: Team Name + Pool/Court Badge + 2-Column Partner Buttons */}
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span
-                                className={`font-extrabold text-base sm:text-lg leading-snug ${
-                                  isFull ? 'text-emerald-950' : 'text-slate-900'
-                                }`}
-                              >
-                                {team.rawTeamName || formatDisplayTeamName(team)}
-                              </span>
-
-                              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200/80">
-                                <span>{team.poolName}</span>
-                                <span className="text-slate-300">•</span>
-                                <span className="text-emerald-700 font-extrabold">
-                                  Court {team.courts}
+                            {/* Top Row of Team Card: Name on left, Pool & Court pill on right */}
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                                <span
+                                  className={`font-extrabold text-sm sm:text-base leading-snug ${
+                                    isFull ? 'text-emerald-950' : 'text-slate-900'
+                                  }`}
+                                >
+                                  {team.rawTeamName || formatDisplayTeamName(team)}
                                 </span>
-                              </span>
 
-                              {isCurrentlyCheckingIn && (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-slate-900 text-emerald-400">
-                                  Active Spotlight
+                                {isFull && (
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                    Checked In ✓
+                                  </span>
+                                )}
+
+                                {isPartial && (
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-800">
+                                    1/2 Here
+                                  </span>
+                                )}
+
+                                {team.notes && (
+                                  <span className="text-[11px] font-medium text-amber-900 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-md">
+                                    {team.notes}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-1 shrink-0">
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-200/80">
+                                  <span>{team.poolName}</span>
+                                  <span className="text-slate-300">•</span>
+                                  <span className="text-emerald-700 font-extrabold">
+                                    Ct {team.courts}
+                                  </span>
                                 </span>
-                              )}
 
-                              {isFull && (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-100 text-emerald-800">
-                                  Checked In ✓
-                                  {team.checkedInAt &&
-                                    ` • ${new Date(team.checkedInAt).toLocaleTimeString([], {
-                                      hour: 'numeric',
-                                      minute: '2-digit',
-                                    })}`}
-                                </span>
-                              )}
-
-                              {isPartial && (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-100 text-amber-800">
-                                  1/2 Arrived • Waiting on Partner
-                                </span>
-                              )}
-
-                              {team.notes && (
-                                <span className="text-xs font-medium text-amber-900 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
-                                  Note: {team.notes}
-                                </span>
-                              )}
-
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setEditingTeam(team);
-                                }}
-                                className="p-1 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 transition cursor-pointer"
-                                title="Edit division, player names, court, or notes"
-                              >
-                                <Edit3 className="w-3.5 h-3.5" />
-                              </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingTeam(team);
+                                  }}
+                                  className="p-1 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 transition cursor-pointer"
+                                  title="Edit team"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
                             </div>
 
-                            {/* Individual Partner Check-In Chips */}
-                            <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                            {/* 2-Column Partner Tap Grid on Mobile */}
+                            <div className="mt-2 grid grid-cols-2 sm:flex sm:flex-wrap gap-1.5 sm:gap-2">
                               {team.players.map((player) => (
                                 <button
                                   key={player.id}
@@ -1704,24 +1600,24 @@ export function App() {
                                     e.stopPropagation();
                                     togglePlayerCheckIn(team.id, player.id);
                                   }}
-                                  className={`group inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs sm:text-sm font-medium border transition active:scale-95 cursor-pointer select-none ${
+                                  className={`group flex items-center gap-1.5 px-2.5 py-2 rounded-xl text-xs font-semibold border transition active:scale-95 cursor-pointer select-none min-w-0 ${
                                     player.checkedIn
                                       ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
                                       : 'bg-slate-100/90 hover:bg-slate-200/80 text-slate-800 border-slate-200'
                                   }`}
                                 >
                                   {player.checkedIn ? (
-                                    <CheckCircle2 className="w-4 h-4 text-emerald-100 shrink-0" />
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-100 shrink-0" />
                                   ) : (
-                                    <Circle className="w-4 h-4 text-slate-400 group-hover:text-slate-600 shrink-0" />
+                                    <Circle className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600 shrink-0" />
                                   )}
-                                  <span className="truncate max-w-[200px]">{player.name}</span>
+                                  <span className="truncate">{player.name}</span>
                                 </button>
                               ))}
                             </div>
                           </div>
 
-                          {/* Right: 1-Tap Full Team Check-In Button */}
+                          {/* Right / Bottom: Full Team Check-In Button */}
                           <div className="flex items-center justify-end shrink-0">
                             <button
                               type="button"
@@ -1729,12 +1625,12 @@ export function App() {
                                 e.stopPropagation();
                                 toggleFullTeamCheckIn(team.id);
                               }}
-                              className={`w-full sm:w-auto min-w-[165px] min-h-[44px] px-4 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition active:scale-95 cursor-pointer select-none ${
+                              className={`w-full sm:w-auto min-w-[148px] min-h-[40px] px-3.5 py-2 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer select-none ${
                                 isFull
                                   ? 'bg-emerald-100 text-emerald-900 hover:bg-emerald-200 border border-emerald-300'
                                   : isPartial
-                                  ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-xs'
-                                  : 'bg-slate-900 hover:bg-slate-800 text-white shadow-xs'
+                                  ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-2xs'
+                                  : 'bg-slate-900 hover:bg-slate-800 text-white shadow-2xs'
                               }`}
                             >
                               {isFull ? (
