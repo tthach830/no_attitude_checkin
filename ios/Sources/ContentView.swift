@@ -9,6 +9,11 @@ enum DocumentPickerMode: String, Identifiable {
     var id: String { rawValue }
 }
 
+struct EditingDivisionTarget: Identifiable {
+    var id: String { division }
+    let division: String
+}
+
 struct DocumentPickerView: UIViewControllerRepresentable {
     let mode: DocumentPickerMode
     let onPick: ([URL]) -> Void
@@ -71,9 +76,8 @@ struct ContentView: View {
 
     @State private var showImportSheet = false
     @State private var directPickerMode: DocumentPickerMode?
-    @State private var showAddTeamSheet = false
-    @State private var showExportSheet = false
     @State private var editingTeam: TeamEntry?
+    @State private var editingDivisionTarget: EditingDivisionTarget?
     @State private var importReplaceMode = false
 
     private let emeraldColor = Color(red: 0.06, green: 0.73, blue: 0.51)
@@ -124,11 +128,11 @@ struct ContentView: View {
                     importReplaceMode: $importReplaceMode
                 )
             }
-            .sheet(isPresented: $showAddTeamSheet) {
-                AddTeamSheet(vm: vm)
-            }
-            .sheet(isPresented: $showExportSheet) {
-                ExportCSVSheet(vm: vm)
+            .sheet(item: $editingDivisionTarget) { target in
+                EditDivisionCourtsSheet(
+                    vm: vm,
+                    initialDivision: target.division
+                )
             }
             .sheet(item: $editingTeam) { team in
                 EditTeamSheet(vm: vm, team: team)
@@ -163,18 +167,18 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Text("Tournament Check-In")
-                            .font(.system(size: 18, weight: .bold))
+                            .font(.system(size: 17, weight: .bold))
                             .foregroundColor(.white)
 
-                        Text("\(vm.divisionsList.count) Div")
-                            .font(.system(size: 11, weight: .bold))
+                        Text("\(vm.divisionsList.count) Div • \(vm.teams.count) Teams")
+                            .font(.system(size: 10, weight: .bold))
                             .padding(.horizontal, 7)
                             .padding(.vertical, 2)
                             .background(emeraldColor.opacity(0.25))
                             .foregroundColor(emeraldColor)
                             .clipShape(Capsule())
                     }
-                    Text("Tap CSVs to select files/folder or tap a team below")
+                    Text("Tap a Division or Court badge to edit courts (e.g. Court 1-7)")
                         .font(.system(size: 11))
                         .foregroundColor(Color.white.opacity(0.65))
                 }
@@ -182,6 +186,21 @@ struct ContentView: View {
                 Spacer()
 
                 HStack(spacing: 6) {
+                    Button {
+                        editingDivisionTarget = EditingDivisionTarget(division: vm.selectedDivision)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "sportscourt.fill")
+                            Text("\(vm.totalCourtsAvailable) Cts")
+                        }
+                        .font(.system(size: 12, weight: .bold))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(Color.white.opacity(0.14))
+                        .foregroundColor(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                    }
+
                     Menu {
                         Button {
                             importReplaceMode = false
@@ -214,10 +233,10 @@ struct ContentView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "folder.badge.plus")
-                            Text("Upload CSVs")
+                            Text("CSVs")
                         }
                         .font(.system(size: 12, weight: .bold))
-                        .padding(.horizontal, 12)
+                        .padding(.horizontal, 10)
                         .padding(.vertical, 8)
                         .background(emeraldColor)
                         .foregroundColor(.black)
@@ -226,42 +245,94 @@ struct ContentView: View {
                 }
             }
 
-            // Division Selector ScrollView
+            // Division Selector ScrollView — Click division or its Court pill to edit courts
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(vm.divisionsList) { div in
-                        divisionTabButton(
-                            title: div.division,
-                            countText: "\(div.checkedIn)/\(div.total)\(div.isAllReady ? " ✓" : "")",
-                            isSelected: vm.selectedDivision == div.division,
-                            isComplete: div.isAllReady
-                        ) {
-                            vm.selectedDivision = div.division
-                            vm.selectedPoolKey = "ALL"
-                            if let firstInDiv = vm.teams.first(where: { $0.division == div.division }) {
-                                vm.activeTeamId = firstInDiv.id
+                        let isSelected = vm.selectedDivision == div.division
+                        HStack(spacing: 6) {
+                            Button {
+                                if isSelected {
+                                    editingDivisionTarget = EditingDivisionTarget(division: div.division)
+                                } else {
+                                    vm.selectedDivision = div.division
+                                    if let firstInDiv = vm.teams.first(where: { $0.division == div.division }) {
+                                        vm.activeTeamId = firstInDiv.id
+                                    }
+                                }
+                            } label: {
+                                HStack(spacing: 5) {
+                                    Text(div.division)
+                                        .font(.system(size: 13, weight: .bold))
+                                    Text("\(div.checkedIn)/\(div.total)\(div.isAllReady ? " ✓" : "")")
+                                        .font(.system(size: 11, weight: .heavy))
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(isSelected ? Color.black.opacity(0.2) : Color.white.opacity(0.15))
+                                        .clipShape(Capsule())
+                                }
+                            }
+
+                            Button {
+                                vm.selectedDivision = div.division
+                                editingDivisionTarget = EditingDivisionTarget(division: div.division)
+                            } label: {
+                                HStack(spacing: 3) {
+                                    Image(systemName: "mappin.and.ellipse")
+                                        .font(.system(size: 9))
+                                    Text("Ct \(div.courtLabel)")
+                                        .font(.system(size: 11, weight: .bold))
+                                    Image(systemName: "pencil")
+                                        .font(.system(size: 9))
+                                }
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 4)
+                                .background(isSelected ? Color.black.opacity(0.85) : Color.black.opacity(0.45))
+                                .foregroundColor(emeraldColor)
+                                .clipShape(RoundedRectangle(cornerRadius: 7))
                             }
                         }
+                        .padding(.leading, 11)
+                        .padding(.trailing, 6)
+                        .padding(.vertical, 6)
+                        .background(
+                            isSelected
+                                ? emeraldColor
+                                : (div.isAllReady ? emeraldColor.opacity(0.25) : Color.white.opacity(0.1))
+                        )
+                        .foregroundColor(isSelected ? .black : .white)
+                        .clipShape(RoundedRectangle(cornerRadius: 11))
                     }
                 }
             }
 
-            // Progress Bar Box
+            // Progress Bar Box & Editable Division Court Range
             VStack(spacing: 6) {
                 HStack {
                     HStack(spacing: 6) {
                         Circle()
                             .fill(emeraldColor)
                             .frame(width: 8, height: 8)
-                        Text("\(vm.selectedDivision == "ALL" ? "All Divisions" : vm.selectedDivision): \(vm.fullTeamsCount)/\(vm.totalTeamsCount) Teams Checked In")
+                        Text("\(vm.selectedDivision): \(vm.fullTeamsCount)/\(vm.totalTeamsCount) Checked In")
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundColor(.white)
                     }
 
-                    if vm.partialTeamsCount > 0 {
-                        Text("• \(vm.partialTeamsCount) Partial")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(.yellow)
+                    if let currentSummary = vm.currentDivisionSummary {
+                        Button {
+                            editingDivisionTarget = EditingDivisionTarget(division: vm.selectedDivision)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text("Court \(currentSummary.courtLabel)")
+                                Image(systemName: "pencil")
+                            }
+                            .font(.system(size: 11, weight: .bold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(emeraldColor.opacity(0.2))
+                            .foregroundColor(emeraldColor)
+                            .clipShape(Capsule())
+                        }
                     }
 
                     Spacer()
@@ -296,36 +367,6 @@ struct ContentView: View {
         .background(darkHeaderColor)
     }
 
-    private func divisionTabButton(
-        title: String,
-        countText: String,
-        isSelected: Bool,
-        isComplete: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Text(title)
-                    .font(.system(size: 13, weight: .bold))
-                Text(countText)
-                    .font(.system(size: 11, weight: .heavy))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(isSelected ? Color.black.opacity(0.2) : Color.white.opacity(0.15))
-                    .clipShape(Capsule())
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .background(
-                isSelected
-                    ? emeraldColor
-                    : (isComplete ? emeraldColor.opacity(0.25) : Color.white.opacity(0.1))
-            )
-            .foregroundColor(isSelected ? .black : .white)
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-        }
-    }
-
     // MARK: - Search & Filter Subbar
     private var searchAndFilterSection: some View {
         VStack(spacing: 8) {
@@ -333,7 +374,7 @@ struct ContentView: View {
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(.secondary)
                     .font(.system(size: 14))
-                TextField("Search team name, player, division, pool...", text: $vm.searchQuery)
+                TextField("Search team name, player, pool, or court...", text: $vm.searchQuery)
                     .font(.system(size: 14))
                     .autocorrectionDisabled()
                 if !vm.searchQuery.isEmpty {
@@ -400,13 +441,20 @@ struct ContentView: View {
                 .foregroundColor(.black)
                 .clipShape(Capsule())
 
-                Text("Division: \(team.division)")
+                Button {
+                    editingDivisionTarget = EditingDivisionTarget(division: team.division)
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("\(team.division) (Ct \(team.divisionCourts ?? team.courts))")
+                        Image(systemName: "pencil")
+                    }
                     .font(.system(size: 11, weight: .bold))
                     .padding(.horizontal, 9)
                     .padding(.vertical, 4)
                     .background(Color.indigo.opacity(0.35))
                     .foregroundColor(.white)
                     .clipShape(Capsule())
+                }
 
                 Spacer()
 
@@ -488,29 +536,40 @@ struct ContentView: View {
         return VStack(spacing: 0) {
             // Section Header
             HStack {
-                Text(section.division)
+                Button {
+                    editingDivisionTarget = EditingDivisionTarget(division: section.division)
+                } label: {
+                    HStack(spacing: 3) {
+                        Text(section.division)
+                        Image(systemName: "pencil")
+                    }
                     .font(.system(size: 11, weight: .heavy))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
                     .background(Color.indigo.opacity(0.15))
                     .foregroundColor(.indigo)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
 
                 Text(section.poolName)
                     .font(.system(size: 15, weight: .bold))
 
                 if !section.courtsLabel.isEmpty && section.courtsLabel != "-" {
-                    HStack(spacing: 3) {
-                        Image(systemName: "mappin.and.ellipse")
-                            .font(.system(size: 10))
-                        Text("Court \(section.courtsLabel)")
-                            .font(.system(size: 11, weight: .bold))
+                    Button {
+                        editingDivisionTarget = EditingDivisionTarget(division: section.division)
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "mappin.and.ellipse")
+                                .font(.system(size: 10))
+                            Text("Court \(section.courtsLabel)")
+                                .font(.system(size: 11, weight: .bold))
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(darkHeaderColor)
+                        .foregroundColor(.white)
+                        .clipShape(Capsule())
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(darkHeaderColor)
-                    .foregroundColor(.white)
-                    .clipShape(Capsule())
                 }
 
                 Spacer()
@@ -593,9 +652,16 @@ struct ContentView: View {
                         .font(.system(size: 17, weight: .heavy))
                         .foregroundColor(.primary)
 
-                    Text("\(team.division) • \(team.poolName) • Court \(team.courts)")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.secondary)
+                    HStack(spacing: 4) {
+                        Text("\(team.division) • \(team.poolName) • Court \(team.courts)")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.secondary)
+                        if let divCourts = team.divisionCourts, divCourts != team.courts {
+                            Text("(Div Ct \(divCourts))")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(.secondary)
+                        }
+                    }
 
                     if let notes = team.notes, !notes.isEmpty {
                         Text("Note: \(notes)")
@@ -676,15 +742,189 @@ struct ContentView: View {
                 .foregroundColor(.secondary)
             Text("No Matching Teams")
                 .font(.headline)
-            Button("Reset All Filters") {
+            Button("Reset Search & Filter") {
                 vm.searchQuery = ""
                 vm.statusFilter = .all
-                vm.selectedPoolKey = "ALL"
-                vm.selectedDivision = "ALL"
             }
             .buttonStyle(.borderedProminent)
         }
         .padding(32)
+    }
+}
+
+// MARK: - Edit Division Courts Sheet (e.g. Select Court 1-7 for Coed Intermediate)
+struct EditDivisionCourtsSheet: View {
+    @ObservedObject var vm: CheckInViewModel
+    let initialDivision: String
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var currentDivision: String = ""
+    @State private var startCourt: Int = 1
+    @State private var endCourt: Int = 7
+    @State private var totalCourtsInput: Int = 18
+    @State private var anchorCourt: Int?
+
+    private let emeraldColor = Color(red: 0.06, green: 0.73, blue: 0.51)
+
+    private func loadBounds(for divName: String) {
+        if let summary = vm.divisionsList.first(where: { $0.division == divName }) {
+            let nums = summary.courtLabel
+                .components(separatedBy: CharacterSet(charactersIn: "-, "))
+                .compactMap { Int($0) }
+                .filter { $0 > 0 }
+            if let minC = nums.min(), let maxC = nums.max() {
+                startCourt = minC
+                endCourt = maxC
+                return
+            }
+        }
+        startCourt = 1
+        endCourt = 7
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Auto-Assign by Total Available Courts") {
+                    Stepper(
+                        "Total Courts Available: \(totalCourtsInput)",
+                        value: $totalCourtsInput,
+                        in: 1...60
+                    )
+                    .font(.subheadline.bold())
+
+                    Button {
+                        vm.autoAssignAllCourts(totalCourts: totalCourtsInput)
+                        loadBounds(for: currentDivision)
+                    } label: {
+                        Label(
+                            "Auto-Assign \(totalCourtsInput) Courts Across \(vm.divisionsList.count) Divisions (\(vm.teams.count) Teams)",
+                            systemImage: "wand.and.stars"
+                        )
+                        .font(.subheadline.bold())
+                    }
+                }
+
+                Section("Select Division to Edit") {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(vm.divisionsList) { div in
+                                let active = div.division == currentDivision
+                                Button {
+                                    currentDivision = div.division
+                                    anchorCourt = nil
+                                    loadBounds(for: div.division)
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(div.division)
+                                            .font(.system(size: 13, weight: .bold))
+                                        Text("\(div.total) teams • Ct \(div.courtLabel)")
+                                            .font(.system(size: 11, weight: .semibold))
+                                    }
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background(active ? emeraldColor : Color(UIColor.secondarySystemBackground))
+                                    .foregroundColor(active ? .black : .primary)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+
+                Section("Assigned Courts for \(currentDivision)") {
+                    let s = min(startCourt, endCourt)
+                    let e = max(startCourt, endCourt)
+                    let rangeLabel = CSVHelper.formatCourtRangeLabel(startCourt: s, endCourt: e)
+
+                    HStack {
+                        Text("Selected Range")
+                            .font(.subheadline.bold())
+                        Spacer()
+                        Text("Court \(rangeLabel) (\(e - s + 1) courts)")
+                            .font(.headline)
+                            .foregroundColor(Color(red: 0.02, green: 0.55, blue: 0.38))
+                    }
+
+                    Stepper("From Court: \(startCourt)", value: $startCourt, in: 1...60) { _ in
+                        if startCourt > endCourt { endCourt = startCourt }
+                    }
+                    Stepper("To Court: \(endCourt)", value: $endCourt, in: 1...60) { _ in
+                        if endCourt < startCourt { startCourt = endCourt }
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        if let anchor = anchorCourt {
+                            Text("Now tap the end court (started at Court \(anchor))...")
+                                .font(.caption.bold())
+                                .foregroundColor(Color(red: 0.02, green: 0.55, blue: 0.38))
+                        } else {
+                            Text("Or tap a start court then end court below (e.g. tap 1 then tap 7):")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+
+                        let maxCourt = max(totalCourtsInput, endCourt, 18)
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 6), spacing: 8) {
+                            ForEach(1...maxCourt, id: \.self) { num in
+                                let inRange = num >= s && num <= e
+                                let isEnd = num == s || num == e
+
+                                Button {
+                                    if let anchor = anchorCourt {
+                                        startCourt = min(anchor, num)
+                                        endCourt = max(anchor, num)
+                                        anchorCourt = nil
+                                    } else {
+                                        anchorCourt = num
+                                        startCourt = num
+                                        endCourt = num
+                                    }
+                                } label: {
+                                    Text("Ct \(num)")
+                                        .font(.system(size: 12, weight: .bold))
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 10)
+                                        .background(
+                                            isEnd
+                                                ? emeraldColor
+                                                : (inRange ? emeraldColor.opacity(0.25) : Color(UIColor.secondarySystemBackground))
+                                        )
+                                        .foregroundColor(isEnd ? .black : .primary)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+            .navigationTitle("Assign Division Courts")
+            .navigationBarTitleDisplayMode(.inline)
+            .onAppear {
+                currentDivision = initialDivision
+                totalCourtsInput = vm.totalCourtsAvailable
+                loadBounds(for: initialDivision)
+            }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save Courts") {
+                        let s = min(startCourt, endCourt)
+                        let e = max(startCourt, endCourt)
+                        vm.assignCourtsToDivision(division: currentDivision, startCourt: s, endCourt: e)
+                        vm.selectedDivision = currentDivision
+                        dismiss()
+                    }
+                    .fontWeight(.bold)
+                }
+            }
+        }
     }
 }
 
@@ -695,12 +935,23 @@ struct ImportCSVSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var sheetPickerMode: DocumentPickerMode?
-    @State private var pasteDivision = "Coed-Intermediate"
+    @State private var pasteDivision = "Coed Intermediate"
     @State private var pasteText = ""
 
     var body: some View {
         NavigationStack {
             Form {
+                Section("Tournament Courts Available") {
+                    Stepper(
+                        "Total Courts Available: \(vm.totalCourtsAvailable)",
+                        value: $vm.totalCourtsAvailable,
+                        in: 1...60
+                    )
+                    Text("Courts 1–\(vm.totalCourtsAvailable) will be assigned across divisions based on how many teams each division has.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
                 Section("Import Mode") {
                     Picker("When importing:", selection: $importReplaceMode) {
                         Text("Add / Merge Divisions").tag(false)
@@ -724,13 +975,13 @@ struct ImportCSVSheet: View {
                             .font(.headline)
                     }
 
-                    Text("Each CSV filename automatically sets the Division (e.g., Men.csv → Men, Coed-Intermediate.csv → Coed-Intermediate). Sample CSV files are also saved in On My iPhone → Check-In.")
+                    Text("Each CSV filename automatically sets the Division (e.g., Coed Intermediate _Sign-In.csv → Coed Intermediate).")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
 
                 Section("Or Paste CSV Text Directly") {
-                    TextField("Division Name (e.g. Men, Coed-Intermediate)", text: $pasteDivision)
+                    TextField("Division Name (e.g. Coed Intermediate)", text: $pasteDivision)
                     TextEditor(text: $pasteText)
                         .frame(minHeight: 110)
                         .font(.system(size: 12, design: .monospaced))
@@ -739,14 +990,16 @@ struct ImportCSVSheet: View {
                         let div = pasteDivision.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "General" : pasteDivision
                         let parsed = CSVHelper.parseTournamentCSV(pasteText, defaultDivision: div)
                         if !parsed.isEmpty {
+                            let combined: [TeamEntry]
                             if importReplaceMode {
-                                vm.teams = parsed
+                                combined = parsed
                             } else {
                                 let kept = vm.teams.filter { $0.division != div }
-                                vm.teams = kept + parsed
+                                combined = kept + parsed
                             }
+                            vm.teams = CSVHelper.autoAssignCourtsByTeamCount(teams: combined, totalCourts: vm.totalCourtsAvailable)
                             vm.selectedDivision = div
-                            vm.activeTeamId = parsed.first?.id
+                            vm.activeTeamId = vm.teams.first(where: { $0.division == div })?.id
                             dismiss()
                         } else {
                             vm.alertMessage = "Could not parse any valid rows from pasted CSV."
@@ -756,7 +1009,7 @@ struct ImportCSVSheet: View {
                 }
 
                 Section {
-                    Button("Restore Starter Divisions (Coed-Intermediate & Men)") {
+                    Button("Restore Starter Divisions") {
                         vm.restoreDefaultRosters()
                         dismiss()
                     }
@@ -782,70 +1035,6 @@ struct ImportCSVSheet: View {
                     }
                 )
                 .ignoresSafeArea()
-            }
-        }
-    }
-}
-
-// MARK: - Add Team Sheet
-struct AddTeamSheet: View {
-    @ObservedObject var vm: CheckInViewModel
-    @Environment(\.dismiss) private var dismiss
-
-    @State private var division = "Coed-Intermediate"
-    @State private var poolName = "Pool 1"
-    @State private var courts = "1"
-    @State private var player1 = ""
-    @State private var player2 = ""
-    @State private var checkInImmediately = true
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("Placement") {
-                    TextField("Division (e.g., Men, Coed-Intermediate)", text: $division)
-                    TextField("Pool Name (e.g., Pool 1)", text: $poolName)
-                    TextField("Court #", text: $courts)
-                }
-
-                Section("Players") {
-                    TextField("Player 1 Name", text: $player1)
-                    TextField("Player 2 Name (Optional)", text: $player2)
-                    Toggle("Mark Checked In Immediately", isOn: $checkInImmediately)
-                }
-            }
-            .navigationTitle("Add Walk-In Team")
-            .navigationBarTitleDisplayMode(.inline)
-            .onAppear {
-                if vm.selectedDivision != "ALL" {
-                    division = vm.selectedDivision
-                }
-            }
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") {
-                        let p1 = player1.trimmingCharacters(in: .whitespacesAndNewlines)
-                        let p2 = player2.trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !p1.isEmpty else { return }
-                        let rawName = p2.isEmpty ? p1 : "\(p1) / \(p2)"
-                        let players = CSVHelper.parseTeamPlayers(rawTeamName: rawName, isCheckedInInit: checkInImmediately)
-                        let newTeam = TeamEntry(
-                            division: division.isEmpty ? "General" : division,
-                            poolName: poolName.isEmpty ? "Pool 1" : poolName,
-                            courts: courts.isEmpty ? "-" : courts,
-                            rawTeamName: rawName,
-                            players: players,
-                            checkedInAt: checkInImmediately ? Date() : nil
-                        )
-                        vm.teams.append(newTeam)
-                        vm.activeTeamId = newTeam.id
-                        dismiss()
-                    }
-                    .disabled(player1.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
             }
         }
     }
@@ -924,59 +1113,6 @@ struct EditTeamSheet: View {
                         vm.teams[idx] = updated
                         dismiss()
                     }
-                }
-            }
-        }
-    }
-}
-
-// MARK: - Export CSV Sheet
-struct ExportCSVSheet: View {
-    @ObservedObject var vm: CheckInViewModel
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            List {
-                Section("Share / Export By Division") {
-                    ForEach(vm.divisionsList) { div in
-                        let divTeams = vm.teams.filter { $0.division == div.division }
-                        let csvString = CSVHelper.exportCSV(teams: divTeams, includeDivision: false)
-                        ShareLink(
-                            item: csvString,
-                            subject: Text("\(div.division) Check-In CSV"),
-                            message: Text("\(div.checkedIn)/\(div.total) teams checked in for \(div.division)")
-                        ) {
-                            HStack {
-                                VStack(alignment: .leading) {
-                                    Text("\(div.division).csv")
-                                        .font(.headline)
-                                    Text("\(div.checkedIn) / \(div.total) teams checked in")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                                Spacer()
-                                Image(systemName: "square.and.arrow.up")
-                            }
-                        }
-                    }
-                }
-
-                Section("Share All Divisions Combined") {
-                    let allCSV = CSVHelper.exportCSV(teams: vm.teams, includeDivision: true)
-                    ShareLink(
-                        item: allCSV,
-                        subject: Text("All Divisions Tournament Check-In CSV")
-                    ) {
-                        Label("Share Combined Tournament CSV", systemImage: "doc.on.doc")
-                    }
-                }
-            }
-            .navigationTitle("Export Check-In CSV")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { dismiss() }
                 }
             }
         }

@@ -8,12 +8,19 @@ export interface PlayerSlot {
 export interface TeamEntry {
   id: string;
   division: string;
+  divisionCourts?: string;
   poolName: string;
   courts: string;
   rawTeamName: string;
   players: PlayerSlot[];
   notes?: string;
   checkedInAt?: string;
+}
+
+export interface DivisionCourtRange {
+  startCourt: number;
+  endCourt: number;
+  label: string;
 }
 
 export type CheckInStatus = 'checked-in' | 'partial' | 'unarrived';

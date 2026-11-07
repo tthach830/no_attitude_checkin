@@ -8,6 +8,7 @@ struct DivisionSummary: Identifiable {
     let total: Int
     let checkedIn: Int
     let partial: Int
+    let courtLabel: String
 
     var isAllReady: Bool { total > 0 && checkedIn == total }
 }
@@ -36,7 +37,14 @@ struct PoolGroupSection: Identifiable {
 
 @MainActor
 final class CheckInViewModel: ObservableObject {
-    private let storageKey = "no_attitude_checkin_ios_v1"
+    private let storageKey = "no_attitude_checkin_ios_v2"
+    private let courtsKey = "no_attitude_checkin_ios_total_courts_v1"
+
+    @Published var totalCourtsAvailable: Int = 18 {
+        didSet {
+            UserDefaults.standard.set(totalCourtsAvailable, forKey: courtsKey)
+        }
+    }
 
     @Published var teams: [TeamEntry] = [] {
         didSet {
@@ -47,21 +55,24 @@ final class CheckInViewModel: ObservableObject {
     @Published var activeTeamId: String?
     @Published var bannerStatusText: String?
     @Published var searchQuery: String = ""
-    @Published var selectedDivision: String = "ALL"
-    @Published var selectedPoolKey: String = "ALL"
+    @Published var selectedDivision: String = "Coed Intermediate"
     @Published var statusFilter: FilterStatus = .all
     @Published var alertMessage: String?
 
     init() {
+        let savedCourts = UserDefaults.standard.integer(forKey: courtsKey)
+        let initialCourts = savedCourts > 0 ? savedCourts : 18
+        self.totalCourtsAvailable = initialCourts
+
         if let data = UserDefaults.standard.data(forKey: storageKey),
            let decoded = try? JSONDecoder().decode([TeamEntry].self, from: data),
            !decoded.isEmpty {
             self.teams = decoded
         } else {
-            self.teams = CSVHelper.defaultTeams()
+            self.teams = CSVHelper.defaultTeams(totalCourts: initialCourts)
         }
         self.activeTeamId = self.teams.first?.id
-        self.selectedDivision = self.teams.first?.division ?? "Coed-Intermediate"
+        self.selectedDivision = self.teams.first?.division ?? "Coed Intermediate"
         seedSampleCSVFilesInDocuments()
     }
 
@@ -69,8 +80,8 @@ final class CheckInViewModel: ObservableObject {
         guard let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
             return
         }
-        let coedURL = docsURL.appendingPathComponent("Coed-Intermediate.csv")
-        let menURL = docsURL.appendingPathComponent("Men.csv")
+        let coedURL = docsURL.appendingPathComponent("Coed Intermediate _Sign-In.csv")
+        let menURL = docsURL.appendingPathComponent("Men's Intermediate_Sign-In.csv")
 
         if !FileManager.default.fileExists(atPath: coedURL.path) {
             try? CSVHelper.coedIntermediateCSV.write(to: coedURL, atomically: true, encoding: .utf8)
@@ -93,16 +104,22 @@ final class CheckInViewModel: ObservableObject {
 
     var divisionsList: [DivisionSummary] {
         var order: [String] = []
-        var counts: [String: (total: Int, checked: Int, partial: Int)] = [:]
+        var counts: [String: (total: Int, checked: Int, partial: Int, divCourts: String?, courtsSet: [String])] = [:]
 
         for team in teams {
             let div = team.division.isEmpty ? "General" : team.division
             if counts[div] == nil {
                 order.append(div)
-                counts[div] = (0, 0, 0)
+                counts[div] = (0, 0, 0, team.divisionCourts, [])
             }
             var item = counts[div]!
             item.total += 1
+            if let dc = team.divisionCourts, !dc.isEmpty {
+                item.divCourts = dc
+            }
+            if !team.courts.isEmpty && team.courts != "-" && !item.courtsSet.contains(team.courts) {
+                item.courtsSet.append(team.courts)
+            }
             switch team.status {
             case .checkedIn: item.checked += 1
             case .partial: item.partial += 1
@@ -113,13 +130,37 @@ final class CheckInViewModel: ObservableObject {
 
         return order.compactMap { div in
             guard let c = counts[div] else { return nil }
-            return DivisionSummary(division: div, total: c.total, checkedIn: c.checked, partial: c.partial)
+            var label = c.divCourts ?? ""
+            if label.isEmpty && !c.courtsSet.isEmpty {
+                var nums: [Int] = []
+                for cs in c.courtsSet {
+                    let parts = cs.components(separatedBy: CharacterSet(charactersIn: "-, "))
+                    for p in parts {
+                        if let n = Int(p), n > 0 { nums.append(n) }
+                    }
+                }
+                if let minC = nums.min(), let maxC = nums.max() {
+                    label = CSVHelper.formatCourtRangeLabel(startCourt: minC, endCourt: maxC)
+                } else {
+                    label = c.courtsSet.joined(separator: ", ")
+                }
+            }
+            return DivisionSummary(
+                division: div,
+                total: c.total,
+                checkedIn: c.checked,
+                partial: c.partial,
+                courtLabel: label.isEmpty ? "1" : label
+            )
         }
     }
 
+    var currentDivisionSummary: DivisionSummary? {
+        divisionsList.first(where: { $0.division == selectedDivision }) ?? divisionsList.first
+    }
+
     var divisionScopedTeams: [TeamEntry] {
-        if selectedDivision == "ALL" { return teams }
-        return teams.filter { $0.division == selectedDivision }
+        teams.filter { $0.division == selectedDivision }
     }
 
     var totalTeamsCount: Int { divisionScopedTeams.count }
@@ -132,49 +173,9 @@ final class CheckInViewModel: ObservableObject {
         return Double(fullTeamsCount) / Double(totalTeamsCount)
     }
 
-    var poolsSummary: [PoolSummary] {
-        var order: [String] = []
-        var map: [String: (division: String, poolName: String, courts: [String], total: Int, checked: Int, partial: Int)] = [:]
-
-        for team in divisionScopedTeams {
-            let key = selectedDivision == "ALL" ? "\(team.division):::\(team.poolName)" : team.poolName
-            if map[key] == nil {
-                order.append(key)
-                map[key] = (team.division, team.poolName, [], 0, 0, 0)
-            }
-            var item = map[key]!
-            if !team.courts.isEmpty && team.courts != "-" && !item.courts.contains(team.courts) {
-                item.courts.append(team.courts)
-            }
-            item.total += 1
-            switch team.status {
-            case .checkedIn: item.checked += 1
-            case .partial: item.partial += 1
-            case .unarrived: break
-            }
-            map[key] = item
-        }
-
-        return order.compactMap { key in
-            guard let item = map[key] else { return nil }
-            return PoolSummary(
-                key: key,
-                division: item.division,
-                poolName: item.poolName,
-                courtsLabel: item.courts.joined(separator: ", "),
-                total: item.total,
-                checkedIn: item.checked,
-                partial: item.partial
-            )
-        }
-    }
-
     var filteredTeams: [TeamEntry] {
         let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return divisionScopedTeams.filter { team in
-            let poolKey = selectedDivision == "ALL" ? "\(team.division):::\(team.poolName)" : team.poolName
-            if selectedPoolKey != "ALL" && poolKey != selectedPoolKey { return false }
-
             switch statusFilter {
             case .all: break
             case .pending: if team.status == .checkedIn { return false }
@@ -222,6 +223,22 @@ final class CheckInViewModel: ObservableObject {
                 teams: grp.teams
             )
         }
+    }
+
+    func assignCourtsToDivision(division: String, startCourt: Int, endCourt: Int) {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        teams = CSVHelper.applyCourtRangeToDivision(
+            teams: teams,
+            division: division,
+            startCourt: startCourt,
+            endCourt: endCourt
+        )
+    }
+
+    func autoAssignAllCourts(totalCourts: Int) {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        totalCourtsAvailable = max(1, totalCourts)
+        teams = CSVHelper.autoAssignCourtsByTeamCount(teams: teams, totalCourts: totalCourtsAvailable)
     }
 
     func toggleFullTeamCheckIn(teamId: String) {
@@ -354,23 +371,25 @@ final class CheckInViewModel: ObservableObject {
             return
         }
 
+        let combined: [TeamEntry]
         if replaceAll {
-            teams = loadedTeams
+            combined = loadedTeams
         } else {
             let kept = teams.filter { !importedDivisions.contains($0.division) }
-            teams = kept + loadedTeams
+            combined = kept + loadedTeams
         }
 
-        selectedDivision = importedDivisions.sorted().first ?? (teams.first?.division ?? "ALL")
-        selectedPoolKey = "ALL"
-        activeTeamId = teams.first(where: { $0.division == selectedDivision })?.id ?? loadedTeams.first?.id
+        teams = CSVHelper.autoAssignCourtsByTeamCount(teams: combined, totalCourts: totalCourtsAvailable)
+
+        selectedDivision = importedDivisions.sorted().first ?? (teams.first?.division ?? "Coed Intermediate")
+        activeTeamId = teams.first(where: { $0.division == selectedDivision })?.id ?? teams.first?.id
         UINotificationFeedbackGenerator().notificationOccurred(.success)
-        alertMessage = "Loaded \(loadedTeams.count) teams across \(importedDivisions.count) division(s): \(importedDivisions.sorted().joined(separator: ", "))"
+        alertMessage = "Loaded \(loadedTeams.count) teams across \(importedDivisions.count) division(s) and assigned \(totalCourtsAvailable) courts."
     }
 
     func resetCheckIns() {
         teams = teams.map { t in
-            if selectedDivision != "ALL" && t.division != selectedDivision { return t }
+            if t.division != selectedDivision { return t }
             var copy = t
             copy.checkedInAt = nil
             copy.players = copy.players.map { p in
@@ -385,10 +404,9 @@ final class CheckInViewModel: ObservableObject {
     }
 
     func restoreDefaultRosters() {
-        let defaults = CSVHelper.defaultTeams()
+        let defaults = CSVHelper.defaultTeams(totalCourts: totalCourtsAvailable)
         teams = defaults
-        selectedDivision = defaults.first?.division ?? "Coed-Intermediate"
-        selectedPoolKey = "ALL"
+        selectedDivision = defaults.first?.division ?? "Coed Intermediate"
         activeTeamId = defaults.first?.id
     }
 }

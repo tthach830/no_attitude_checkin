@@ -25,6 +25,7 @@ enum FilterStatus: String, CaseIterable, Identifiable {
 struct TeamEntry: Identifiable, Codable, Equatable {
     var id: String = UUID().uuidString
     var division: String
+    var divisionCourts: String?
     var poolName: String
     var courts: String
     var rawTeamName: String
@@ -84,20 +85,158 @@ enum CSVHelper {
     Pool 4,13,Diogo Lucio / Isaiah Rios,
     """
 
-    static func defaultTeams() -> [TeamEntry] {
-        let coed = parseTournamentCSV(coedIntermediateCSV, defaultDivision: "Coed-Intermediate")
-        let men = parseTournamentCSV(menCSV, defaultDivision: "Men")
-        return coed + men
+    static func formatCourtRangeLabel(startCourt: Int, endCourt: Int) -> String {
+        let s = max(1, min(startCourt, endCourt))
+        let e = max(startCourt, endCourt)
+        return s == e ? "\(s)" : "\(s)-\(e)"
+    }
+
+    static func applyCourtRangeToDivision(
+        teams: [TeamEntry],
+        division: String,
+        startCourt: Int,
+        endCourt: Int
+    ) -> [TeamEntry] {
+        let s = max(1, min(startCourt, endCourt))
+        let e = max(startCourt, endCourt)
+        let rangeLabel = formatCourtRangeLabel(startCourt: s, endCourt: e)
+
+        var poolNames: [String] = []
+        for t in teams where t.division == division {
+            if !poolNames.contains(t.poolName) {
+                poolNames.append(t.poolName)
+            }
+        }
+
+        let numPools = poolNames.count
+        let totalDivCourts = e - s + 1
+        var poolCourtMap: [String: String] = [:]
+
+        if numPools > 0 {
+            if totalDivCourts >= numPools {
+                var cursor = s
+                let base = totalDivCourts / numPools
+                var rem = totalDivCourts % numPools
+                for pName in poolNames {
+                    let count = base + (rem > 0 ? 1 : 0)
+                    if rem > 0 { rem -= 1 }
+                    let pStart = cursor
+                    let pEnd = cursor + count - 1
+                    cursor = pEnd + 1
+                    poolCourtMap[pName] = formatCourtRangeLabel(startCourt: pStart, endCourt: pEnd)
+                }
+            } else {
+                for (idx, pName) in poolNames.enumerated() {
+                    let assigned = s + ((idx * totalDivCourts) / numPools)
+                    poolCourtMap[pName] = "\(assigned)"
+                }
+            }
+        }
+
+        return teams.map { t in
+            guard t.division == division else { return t }
+            var copy = t
+            copy.divisionCourts = rangeLabel
+            copy.courts = poolCourtMap[t.poolName] ?? rangeLabel
+            return copy
+        }
+    }
+
+    static func autoAssignCourtsByTeamCount(teams: [TeamEntry], totalCourts: Int) -> [TeamEntry] {
+        let safeTotalCourts = max(1, totalCourts)
+        var divisionOrder: [String] = []
+        var divisionCounts: [String: Int] = [:]
+
+        for t in teams {
+            let div = t.division.isEmpty ? "General" : t.division
+            if divisionCounts[div] == nil {
+                divisionOrder.append(div)
+                divisionCounts[div] = 0
+            }
+            divisionCounts[div, default: 0] += 1
+        }
+
+        let numDivs = divisionOrder.count
+        guard numDivs > 0 else { return teams }
+        let totalTeams = teams.count
+        var allocations: [String: Int] = [:]
+
+        if safeTotalCourts <= numDivs {
+            for div in divisionOrder { allocations[div] = 1 }
+        } else {
+            struct Quota {
+                let div: String
+                let count: Int
+                var flo: Int
+                let remainder: Double
+            }
+            var quotas: [Quota] = divisionOrder.map { div in
+                let c = divisionCounts[div] ?? 0
+                let exact = (Double(c) / Double(totalTeams)) * Double(safeTotalCourts)
+                let f = max(1, Int(floor(exact)))
+                return Quota(div: div, count: c, flo: f, remainder: exact - floor(exact))
+            }
+
+            var sumFlo = quotas.reduce(0) { $0 + $1.flo }
+            while sumFlo > safeTotalCourts {
+                quotas.sort { $0.flo > $1.flo }
+                if quotas[0].flo > 1 {
+                    quotas[0].flo -= 1
+                    sumFlo -= 1
+                } else {
+                    break
+                }
+            }
+
+            var remaining = safeTotalCourts - sumFlo
+            var byRemainder = quotas.sorted {
+                if $0.remainder != $1.remainder { return $0.remainder > $1.remainder }
+                return $0.count > $1.count
+            }
+            var i = 0
+            while remaining > 0 && !byRemainder.isEmpty {
+                let idx = i % byRemainder.count
+                byRemainder[idx].flo += 1
+                remaining -= 1
+                i += 1
+            }
+
+            for q in byRemainder {
+                allocations[q.div] = q.flo
+            }
+        }
+
+        var updated = teams
+        var currentCourt = 1
+        for div in divisionOrder {
+            let cCount = allocations[div] ?? 1
+            let s = currentCourt
+            let e = currentCourt + cCount - 1
+            currentCourt = e + 1
+            updated = applyCourtRangeToDivision(teams: updated, division: div, startCourt: s, endCourt: e)
+        }
+        return updated
+    }
+
+    static func defaultTeams(totalCourts: Int = 18) -> [TeamEntry] {
+        let coed = parseTournamentCSV(coedIntermediateCSV, defaultDivision: "Coed Intermediate")
+        let men = parseTournamentCSV(menCSV, defaultDivision: "Men's Intermediate")
+        return autoAssignCourtsByTeamCount(teams: coed + men, totalCourts: totalCourts)
     }
 
     static func extractDivisionFromFilename(_ filename: String) -> String {
         let base = URL(fileURLWithPath: filename).deletingPathExtension().lastPathComponent
-        let cleaned = base.replacingOccurrences(
+        let withoutCopy = base.replacingOccurrences(
             of: #"\s*\(\d+\)$"#,
             with: "",
             options: .regularExpression
         ).trimmingCharacters(in: .whitespacesAndNewlines)
-        return cleaned.isEmpty ? "General" : cleaned
+        let withoutSignIn = withoutCopy.replacingOccurrences(
+            of: #"[\s_-]*sign[\s_-]*in$"#,
+            with: "",
+            options: [.regularExpression, .caseInsensitive]
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
+        return withoutSignIn.isEmpty ? (withoutCopy.isEmpty ? "General" : withoutCopy) : withoutSignIn
     }
 
     static func parseTeamPlayers(rawTeamName: String, isCheckedInInit: Bool, partialSpec: String? = nil) -> [PlayerSlot] {
@@ -252,56 +391,5 @@ enum CSVHelper {
         }
 
         return entries
-    }
-
-    static func escapeCSVField(_ value: String) -> String {
-        if value.contains(",") || value.contains("\"") || value.contains("\n") {
-            let escaped = value.replacingOccurrences(of: "\"", with: "\"\"")
-            return "\"\(escaped)\""
-        }
-        return value
-    }
-
-    static func exportCSV(teams: [TeamEntry], includeDivision: Bool) -> String {
-        var lines: [String] = []
-        if includeDivision {
-            lines.append("Division,Pool Name,Courts,Team Name,Checked In")
-        } else {
-            lines.append("Pool Name,Courts,Team Name,Checked In")
-        }
-
-        for team in teams {
-            let checkedVal: String
-            switch team.status {
-            case .checkedIn:
-                checkedVal = "Yes"
-            case .partial:
-                let names = team.players.filter { $0.checkedIn }.map { $0.name }.joined(separator: ", ")
-                checkedVal = "Partial (\(names))"
-            case .unarrived:
-                checkedVal = ""
-            }
-
-            if includeDivision {
-                let row = [
-                    escapeCSVField(team.division),
-                    escapeCSVField(team.poolName),
-                    escapeCSVField(team.courts),
-                    escapeCSVField(team.displayTeamName),
-                    escapeCSVField(checkedVal)
-                ].joined(separator: ",")
-                lines.append(row)
-            } else {
-                let row = [
-                    escapeCSVField(team.poolName),
-                    escapeCSVField(team.courts),
-                    escapeCSVField(team.displayTeamName),
-                    escapeCSVField(checkedVal)
-                ].joined(separator: ",")
-                lines.append(row)
-            }
-        }
-
-        return lines.joined(separator: "\n")
     }
 }
