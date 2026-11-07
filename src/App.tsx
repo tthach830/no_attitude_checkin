@@ -15,7 +15,6 @@ import {
   MapPin,
   AlertCircle,
   Smartphone,
-  ArrowRight,
   FolderOpen,
   Layers,
   Trash2,
@@ -1177,101 +1176,198 @@ export function App() {
           </div>
         )}
 
-        {/* NOW CHECKING IN — Prominent Team Name & Division Spotlight Card */}
-        {activeTeam && (
-          <div className="bg-slate-900 text-white rounded-3xl p-5 shadow-lg border-2 border-emerald-500/80 transition-all">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
+        {/* NOW CHECKING IN — Redesigned Boarding-Pass Style Team Check-In Card */}
+        {activeTeam && (() => {
+          const activeStatus = getTeamStatus(activeTeam);
+          const isAllChecked = activeStatus === 'checked-in';
+          const isHalfChecked = activeStatus === 'partial';
+          const checkedPlayersCount = activeTeam.players.filter((p) => p.checkedIn).length;
+          const divCourtLabel =
+            activeTeam.divisionCourts || currentDivisionMeta?.courtLabel || activeTeam.courts;
+
+          return (
+            <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 text-white rounded-3xl p-5 sm:p-6 shadow-xl border-2 border-emerald-500/80 transition-all">
+              {/* Subtle ambient top-right glow */}
+              <div className="pointer-events-none absolute -top-20 -right-20 w-64 h-64 rounded-full bg-emerald-500/10 blur-3xl" />
+
+              {/* Top Row: Status Pill + Division Courts Pill on Left, Edit & Close Buttons on Right */}
+              <div className="relative flex items-center justify-between gap-3 flex-wrap pb-4 border-b border-slate-800/90">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider bg-emerald-500 text-slate-950">
-                    <UserCheck className="w-3.5 h-3.5" />
-                    Now Checking In
-                  </span>
-                  <button
-                    onClick={() => setEditingDivisionCourts(activeTeam.division)}
-                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-500/30 hover:bg-indigo-500/50 text-indigo-200 border border-indigo-400/40 cursor-pointer"
+                  <span
+                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold uppercase tracking-wider shadow-xs ${
+                      isAllChecked
+                        ? 'bg-emerald-400 text-slate-950'
+                        : isHalfChecked
+                        ? 'bg-amber-400 text-slate-950'
+                        : 'bg-emerald-500 text-slate-950'
+                    }`}
                   >
+                    <UserCheck className="w-3.5 h-3.5 stroke-[2.5]" />
                     <span>
-                      {activeTeam.division} (Courts{' '}
-                      {activeTeam.divisionCourts || currentDivisionMeta?.courtLabel || activeTeam.courts})
+                      {isAllChecked
+                        ? 'Team Checked In'
+                        : isHalfChecked
+                        ? `Checking In (${checkedPlayersCount}/${activeTeam.players.length} Here)`
+                        : 'Now Checking In'}
                     </span>
-                    <Edit3 className="w-3 h-3" />
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={() => setEditingDivisionCourts(activeTeam.division)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-indigo-500/20 hover:bg-indigo-500/35 text-indigo-200 border border-indigo-400/30 transition cursor-pointer"
+                    title="Click to edit assigned courts for this division"
+                  >
+                    <span>{activeTeam.division}</span>
+                    <span className="text-indigo-400">•</span>
+                    <span className="text-indigo-100">Courts {divCourtLabel}</span>
+                    <Edit3 className="w-3 h-3 opacity-80" />
                   </button>
+
                   {toastMessage && (
-                    <span className="text-xs font-medium text-emerald-300">
+                    <span className="text-xs font-semibold text-emerald-300 bg-emerald-500/10 border border-emerald-500/25 px-2.5 py-0.5 rounded-full">
                       {toastMessage.statusText}
                     </span>
                   )}
                 </div>
 
-                {/* Big CSV Team Name */}
-                <div className="mt-2">
-                  <div className="text-xs uppercase tracking-wider text-slate-400 font-semibold">
-                    Team Name
-                  </div>
-                  <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white mt-0.5">
-                    {activeTeam.rawTeamName || formatDisplayTeamName(activeTeam)}
-                  </h2>
-                </div>
-
-                {/* Assigned Division, Pool & Court Direction */}
-                <div className="mt-3 flex flex-wrap items-center gap-2.5">
-                  <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-slate-800 border border-slate-700 text-sm font-bold text-white">
-                    <span className="text-indigo-300">{activeTeam.division}</span>
-                    <span className="text-slate-500">•</span>
-                    <span>{activeTeam.poolName}</span>
-                    <ArrowRight className="w-4 h-4 text-emerald-400" />
-                    <span className="text-emerald-400">Court {activeTeam.courts}</span>
-                  </div>
-
-                  {activeTeam.players.map((p) => (
-                    <button
-                      key={p.id}
-                      onClick={() => togglePlayerCheckIn(activeTeam.id, p.id)}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition cursor-pointer ${
-                        p.checkedIn
-                          ? 'bg-emerald-600 text-white border-emerald-500'
-                          : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
-                      }`}
-                    >
-                      {p.checkedIn ? (
-                        <CheckCircle2 className="w-3.5 h-3.5 text-white" />
-                      ) : (
-                        <Circle className="w-3.5 h-3.5 text-slate-400" />
-                      )}
-                      <span>{p.name}</span>
-                    </button>
-                  ))}
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setEditingTeam(activeTeam)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-800 border border-slate-700/80 transition cursor-pointer"
+                    title="Edit team details"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Edit</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTeamId(null)}
+                    className="p-1.5 rounded-xl text-slate-400 hover:text-white bg-slate-800/60 hover:bg-slate-800 border border-slate-700/60 transition cursor-pointer"
+                    title="Hide spotlight card"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
 
-              <div className="flex sm:flex-col items-center sm:items-end justify-between gap-2 shrink-0">
-                <button
-                  onClick={() => toggleFullTeamCheckIn(activeTeam.id)}
-                  className={`px-5 py-3 rounded-2xl font-bold text-sm flex items-center gap-2 transition cursor-pointer ${
-                    getTeamStatus(activeTeam) === 'checked-in'
-                      ? 'bg-emerald-500 text-slate-950 hover:bg-emerald-400'
-                      : 'bg-white text-slate-950 hover:bg-slate-100'
-                  }`}
-                >
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>
-                    {getTeamStatus(activeTeam) === 'checked-in'
-                      ? 'Checked In ✓'
-                      : 'Mark Full Team Checked In'}
-                  </span>
-                </button>
+              {/* Main Body: Left = Team Name & Partner Check-In Cards | Right = Pool/Court Ticket + Full Team CTA */}
+              <div className="relative mt-4 grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
+                {/* Left Column: Team Name & Individual Partner Cards */}
+                <div className="lg:col-span-7 flex flex-col justify-between space-y-4">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] uppercase tracking-widest text-emerald-400 font-bold">
+                        Team Name
+                      </span>
+                      {activeTeam.notes && (
+                        <span className="text-[11px] font-semibold text-amber-300 bg-amber-500/15 border border-amber-400/30 px-2 py-0.5 rounded-md">
+                          Note: {activeTeam.notes}
+                        </span>
+                      )}
+                    </div>
+                    <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white mt-1 leading-tight">
+                      {activeTeam.rawTeamName || formatDisplayTeamName(activeTeam)}
+                    </h2>
+                  </div>
 
-                <button
-                  onClick={() => setActiveTeamId(null)}
-                  className="text-xs text-slate-400 hover:text-white underline cursor-pointer"
-                >
-                  Hide spotlight
-                </button>
+                  {/* Interactive Partner Check-In Cards */}
+                  <div>
+                    <div className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold mb-2">
+                      Players ({checkedPlayersCount} of {activeTeam.players.length} Checked In — Tap Individual or Full Team)
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {activeTeam.players.map((p, idx) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => togglePlayerCheckIn(activeTeam.id, p.id)}
+                          className={`group flex items-center justify-between gap-3 px-3.5 py-3 rounded-2xl border text-left transition active:scale-[0.99] cursor-pointer ${
+                            p.checkedIn
+                              ? 'bg-emerald-500/20 border-emerald-400/70 text-white shadow-sm'
+                              : 'bg-slate-800/75 hover:bg-slate-800 border-slate-700/90 text-slate-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            {p.checkedIn ? (
+                              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                            ) : (
+                              <Circle className="w-5 h-5 text-slate-400 group-hover:text-slate-200 shrink-0" />
+                            )}
+                            <div className="min-w-0">
+                              <div className="text-sm font-bold truncate text-white">
+                                {p.name}
+                              </div>
+                              <div
+                                className={`text-[11px] font-medium ${
+                                  p.checkedIn ? 'text-emerald-300' : 'text-slate-400'
+                                }`}
+                              >
+                                {p.checkedIn ? 'Checked In ✓' : `Player ${idx + 1} • Tap to check in`}
+                              </div>
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right Column: Pool & Court Assignment Pass + Primary Check-In CTA */}
+                <div className="lg:col-span-5 flex flex-col justify-between bg-slate-950/65 border border-slate-800/90 rounded-2xl p-4 space-y-3.5">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3">
+                      <div className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
+                        Pool Assignment
+                      </div>
+                      <div className="text-lg sm:text-xl font-extrabold text-white mt-0.5">
+                        {activeTeam.poolName}
+                      </div>
+                      <div className="text-[11px] text-slate-400 truncate mt-0.5">
+                        {activeTeam.division}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setEditingDivisionCourts(activeTeam.division)}
+                      className="bg-emerald-950/40 hover:bg-emerald-950/70 border border-emerald-500/40 rounded-xl p-3 text-left transition cursor-pointer group"
+                      title="Click to edit assigned courts"
+                    >
+                      <div className="flex items-center justify-between text-[10px] uppercase tracking-wider font-bold text-emerald-300">
+                        <span>Assigned Court</span>
+                        <Edit3 className="w-3 h-3 opacity-75 group-hover:opacity-100" />
+                      </div>
+                      <div className="text-lg sm:text-xl font-extrabold text-emerald-400 mt-0.5 flex items-center gap-1">
+                        <MapPin className="w-4 h-4 shrink-0" />
+                        <span>Court {activeTeam.courts}</span>
+                      </div>
+                      <div className="text-[11px] text-emerald-300/70 truncate mt-0.5">
+                        Div Courts {divCourtLabel}
+                      </div>
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => toggleFullTeamCheckIn(activeTeam.id)}
+                    className={`w-full py-3.5 px-5 rounded-xl font-extrabold text-sm flex items-center justify-center gap-2 transition active:scale-[0.99] shadow-md cursor-pointer ${
+                      isAllChecked
+                        ? 'bg-emerald-500 text-slate-950 hover:bg-emerald-400'
+                        : 'bg-white text-slate-950 hover:bg-emerald-50'
+                    }`}
+                  >
+                    <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
+                    <span>
+                      {isAllChecked ? 'Full Team Checked In ✓' : 'Mark Full Team Checked In'}
+                    </span>
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {groupedByDivisionAndPool.length === 0 ? (
           <div className="bg-white rounded-3xl p-10 text-center border border-slate-200 shadow-xs my-6">
@@ -1373,17 +1469,9 @@ export function App() {
                         }`}
                       >
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3.5">
-                          {/* Left: Division, Team Name from CSV & Individual Player Tap Chips */}
+                          {/* Left: Team Name from CSV, Pool/Court Pills & Individual Player Tap Chips */}
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
-                              <span
-                                className={`text-[11px] font-bold px-2 py-0.5 rounded border ${getDivisionColorClass(
-                                  team.division
-                                )}`}
-                              >
-                                {team.division}
-                              </span>
-
                               <span
                                 className={`font-extrabold text-base sm:text-lg leading-snug ${
                                   isFull ? 'text-emerald-950' : 'text-slate-900'
@@ -1392,9 +1480,17 @@ export function App() {
                                 {team.rawTeamName || formatDisplayTeamName(team)}
                               </span>
 
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200/80">
+                                <span>{team.poolName}</span>
+                                <span className="text-slate-300">•</span>
+                                <span className="text-emerald-700 font-extrabold">
+                                  Court {team.courts}
+                                </span>
+                              </span>
+
                               {isCurrentlyCheckingIn && (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-slate-900 text-emerald-400">
-                                  Checking In Now
+                                  Active Spotlight
                                 </span>
                               )}
 
@@ -1415,6 +1511,12 @@ export function App() {
                                 </span>
                               )}
 
+                              {team.notes && (
+                                <span className="text-xs font-medium text-amber-900 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
+                                  Note: {team.notes}
+                                </span>
+                              )}
+
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -1425,29 +1527,6 @@ export function App() {
                               >
                                 <Edit3 className="w-3.5 h-3.5" />
                               </button>
-                            </div>
-
-                            <div className="mt-1 flex items-center gap-2 text-xs text-slate-500 font-medium flex-wrap">
-                              <span>{team.division}</span>
-                              <span>•</span>
-                              <span>{team.poolName}</span>
-                              <span>•</span>
-                              <span className="font-semibold text-slate-700">
-                                Court {team.courts}
-                              </span>
-                              {team.divisionCourts && team.divisionCourts !== team.courts && (
-                                <span className="text-slate-400">
-                                  (Div Courts {team.divisionCourts})
-                                </span>
-                              )}
-                              {team.notes && (
-                                <>
-                                  <span>•</span>
-                                  <span className="text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">
-                                    Note: {team.notes}
-                                  </span>
-                                </>
-                              )}
                             </div>
 
                             {/* Individual Partner Check-In Chips */}

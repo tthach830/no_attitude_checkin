@@ -455,18 +455,26 @@ struct ContentView: View {
         .overlay(Divider(), alignment: .bottom)
     }
 
-    // MARK: - Now Checking In Spotlight Card
+    // MARK: - Now Checking In Spotlight Card (Redesigned Boarding-Pass Layout)
     private func nowCheckingInSpotlight(team: TeamEntry) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
+        let checkedPlayers = team.players.filter { $0.checkedIn }.count
+        let divCourts = team.divisionCourts ?? team.courts
+
+        return VStack(alignment: .leading, spacing: 12) {
+            // Top Header Row: Status Badge + Division Courts Pill + Close Button
+            HStack(spacing: 8) {
                 HStack(spacing: 5) {
-                    Image(systemName: "checkmark.seal.fill")
-                    Text("NOW CHECKING IN")
+                    Image(systemName: team.status == .checkedIn ? "checkmark.seal.fill" : "person.badge.shield.checkmark.fill")
+                    Text(
+                        team.status == .checkedIn
+                            ? "TEAM CHECKED IN"
+                            : (team.status == .partial ? "CHECKING IN (\(checkedPlayers)/\(team.players.count))" : "NOW CHECKING IN")
+                    )
                 }
                 .font(.system(size: 11, weight: .heavy))
-                .padding(.horizontal, 9)
-                .padding(.vertical, 4)
-                .background(emeraldColor)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(team.status == .partial ? Color.orange : emeraldColor)
                 .foregroundColor(.black)
                 .clipShape(Capsule())
 
@@ -474,86 +482,195 @@ struct ContentView: View {
                     editingDivisionTarget = EditingDivisionTarget(division: team.division)
                 } label: {
                     HStack(spacing: 4) {
-                        Text("\(team.division) (Ct \(team.divisionCourts ?? team.courts))")
+                        Text("\(team.division) • Courts \(divCourts)")
                         Image(systemName: "pencil")
                     }
                     .font(.system(size: 11, weight: .bold))
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 4)
-                    .background(Color.indigo.opacity(0.35))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Color.indigo.opacity(0.3))
                     .foregroundColor(.white)
+                    .overlay(
+                        Capsule()
+                            .stroke(Color.indigo.opacity(0.5), lineWidth: 1)
+                    )
                     .clipShape(Capsule())
                 }
 
                 Spacer()
 
                 Button {
-                    vm.activeTeamId = nil
+                    editingTeam = team
                 } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(Color.white.opacity(0.6))
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(Color.white.opacity(0.75))
+                        .padding(6)
+                        .background(Color.white.opacity(0.1))
+                        .clipShape(Circle())
                 }
-            }
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text("TEAM NAME (FROM CSV)")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundColor(Color.white.opacity(0.6))
-
-                Text(team.displayTeamName)
-                    .font(.system(size: 22, weight: .heavy))
-                    .foregroundColor(.white)
-            }
-
-            if let statusMsg = vm.bannerStatusText {
-                Text(statusMsg)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(emeraldColor)
-            }
-
-            HStack(spacing: 8) {
-                HStack(spacing: 6) {
-                    Text(team.division)
-                        .foregroundColor(Color.indigo.opacity(0.9))
-                    Text("•")
-                        .foregroundColor(.gray)
-                    Text(team.poolName)
-                        .foregroundColor(.white)
-                    Image(systemName: "arrow.right")
-                        .foregroundColor(emeraldColor)
-                    Text("Court \(team.courts)")
-                        .foregroundColor(emeraldColor)
-                }
-                .font(.system(size: 13, weight: .bold))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Color.white.opacity(0.1))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-
-                Spacer()
 
                 Button {
-                    vm.toggleFullTeamCheckIn(teamId: team.id)
+                    vm.activeTeamId = nil
                 } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: team.status == .checkedIn ? "checkmark.circle.fill" : "person.2.fill")
-                        Text(team.status == .checkedIn ? "Checked In ✓" : "Check In Team")
-                    }
-                    .font(.system(size: 13, weight: .bold))
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 9)
-                    .background(team.status == .checkedIn ? emeraldColor : .white)
-                    .foregroundColor(.black)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(Color.white.opacity(0.75))
+                        .padding(7)
+                        .background(Color.white.opacity(0.1))
+                        .clipShape(Circle())
                 }
             }
+
+            Divider()
+                .background(Color.white.opacity(0.12))
+
+            // Hero Team Name
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text("TEAM NAME")
+                        .font(.system(size: 10, weight: .heavy))
+                        .tracking(1.0)
+                        .foregroundColor(emeraldColor)
+
+                    if let statusMsg = vm.bannerStatusText {
+                        Text("• \(statusMsg)")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(Color.white.opacity(0.8))
+                    }
+                }
+
+                Text(team.displayTeamName)
+                    .font(.system(size: 24, weight: .heavy))
+                    .foregroundColor(.white)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            // Two-Column Pool & Court Assignment Callout Tiles
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("POOL ASSIGNMENT")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(Color.white.opacity(0.55))
+                    Text(team.poolName)
+                        .font(.system(size: 16, weight: .heavy))
+                        .foregroundColor(.white)
+                    Text(team.division)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(Color.white.opacity(0.6))
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(10)
+                .background(Color.black.opacity(0.35))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+
+                Button {
+                    editingDivisionTarget = EditingDivisionTarget(division: team.division)
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack {
+                            Text("ASSIGNED COURT")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundColor(emeraldColor.opacity(0.9))
+                            Spacer()
+                            Image(systemName: "pencil")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(emeraldColor)
+                        }
+                        HStack(spacing: 4) {
+                            Image(systemName: "mappin.and.ellipse")
+                                .font(.system(size: 13, weight: .bold))
+                            Text("Court \(team.courts)")
+                                .font(.system(size: 16, weight: .heavy))
+                        }
+                        .foregroundColor(emeraldColor)
+
+                        Text("Div Courts \(divCourts)")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(emeraldColor.opacity(0.75))
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+                    .background(emeraldColor.opacity(0.12))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(emeraldColor.opacity(0.45), lineWidth: 1)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                .buttonStyle(.plain)
+            }
+
+            // Interactive Partner Check-In Cards
+            VStack(alignment: .leading, spacing: 6) {
+                Text("PLAYERS (\(checkedPlayers) OF \(team.players.count) CHECKED IN)")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(Color.white.opacity(0.55))
+
+                HStack(spacing: 8) {
+                    ForEach(team.players) { player in
+                        Button {
+                            vm.togglePlayerCheckIn(teamId: team.id, playerId: player.id)
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: player.checkedIn ? "checkmark.circle.fill" : "circle")
+                                    .font(.system(size: 16, weight: .bold))
+                                    .foregroundColor(player.checkedIn ? emeraldColor : Color.white.opacity(0.5))
+
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(player.name)
+                                        .font(.system(size: 13, weight: .bold))
+                                        .foregroundColor(.white)
+                                        .lineLimit(1)
+                                    Text(player.checkedIn ? "Checked In ✓" : "Tap to check in")
+                                        .font(.system(size: 10, weight: .medium))
+                                        .foregroundColor(player.checkedIn ? emeraldColor : Color.white.opacity(0.55))
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 9)
+                            .background(player.checkedIn ? emeraldColor.opacity(0.2) : Color.white.opacity(0.08))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(player.checkedIn ? emeraldColor.opacity(0.7) : Color.white.opacity(0.14), lineWidth: 1)
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            // Primary Full-Team Check-In Button
+            Button {
+                vm.toggleFullTeamCheckIn(teamId: team.id)
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: team.status == .checkedIn ? "checkmark.circle.fill" : "checkmark.circle")
+                        .font(.system(size: 16, weight: .bold))
+                    Text(team.status == .checkedIn ? "Full Team Checked In ✓" : "Mark Full Team Checked In")
+                        .font(.system(size: 15, weight: .heavy))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(team.status == .checkedIn ? emeraldColor : Color.white)
+                .foregroundColor(.black)
+                .clipShape(RoundedRectangle(cornerRadius: 13))
+            }
         }
-        .padding(14)
+        .padding(16)
         .background(darkHeaderColor)
-        .clipShape(RoundedRectangle(cornerRadius: 18))
+        .clipShape(RoundedRectangle(cornerRadius: 22))
         .overlay(
-            RoundedRectangle(cornerRadius: 18)
-                .stroke(emeraldColor, lineWidth: 2)
+            RoundedRectangle(cornerRadius: 22)
+                .stroke(emeraldColor.opacity(0.85), lineWidth: 2)
         )
     }
 
