@@ -39,40 +39,108 @@ struct PoolGroupSection: Identifiable {
 final class CheckInViewModel: ObservableObject {
     private let storageKey = "no_attitude_checkin_ios_v2"
     private let courtsKey = "no_attitude_checkin_ios_total_courts_v1"
+    private let tournamentNameKey = "no_attitude_checkin_ios_tournament_name_v1"
+    private let selectedDivKey = "no_attitude_checkin_ios_selected_div_v1"
+    private let activeSavedIdKey = "no_attitude_checkin_ios_active_saved_id_v1"
+    private let savedTournamentsKey = "no_attitude_checkin_ios_saved_tournaments_v1"
+
+    private var isInitializing = true
+
+    @Published var tournamentName: String = "No Attitude Tournament" {
+        didSet {
+            if !isInitializing { saveToDisk() }
+        }
+    }
 
     @Published var totalCourtsAvailable: Int = 18 {
         didSet {
-            UserDefaults.standard.set(totalCourtsAvailable, forKey: courtsKey)
+            if !isInitializing { saveToDisk() }
         }
     }
 
     @Published var teams: [TeamEntry] = [] {
         didSet {
-            saveToDisk()
+            if !isInitializing { saveToDisk() }
         }
     }
+
+    @Published var savedTournaments: [SavedTournament] = []
+    @Published var activeSavedTournamentId: String?
+    @Published var lastSavedAt: Date = Date()
 
     @Published var activeTeamId: String?
     @Published var bannerStatusText: String?
     @Published var searchQuery: String = ""
-    @Published var selectedDivision: String = "Coed Intermediate"
+    @Published var selectedDivision: String = "Coed Intermediate" {
+        didSet {
+            if !isInitializing { saveToDisk() }
+        }
+    }
     @Published var statusFilter: FilterStatus = .all
     @Published var alertMessage: String?
+
+    private var activeTournamentFileURL: URL? {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("active_tournament.json")
+    }
+
+    private var savedTournamentsFileURL: URL? {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("saved_tournaments.json")
+    }
 
     init() {
         let savedCourts = UserDefaults.standard.integer(forKey: courtsKey)
         let initialCourts = savedCourts > 0 ? savedCourts : 18
         self.totalCourtsAvailable = initialCourts
 
-        if let data = UserDefaults.standard.data(forKey: storageKey),
-           let decoded = try? JSONDecoder().decode([TeamEntry].self, from: data),
-           !decoded.isEmpty {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        let defaultName = "No Attitude Tournament (\(formatter.string(from: Date())))"
+        self.tournamentName = UserDefaults.standard.string(forKey: tournamentNameKey) ?? defaultName
+        self.activeSavedTournamentId = UserDefaults.standard.string(forKey: activeSavedIdKey)
+
+        // Load saved tournaments list from Documents/saved_tournaments.json or UserDefaults
+        if let url = savedTournamentsFileURL,
+           let data = try? Data(contentsOf: url),
+           let decoded = try? JSONDecoder().decode([SavedTournament].self, from: data) {
+            self.savedTournaments = decoded
+        } else if let data = UserDefaults.standard.data(forKey: savedTournamentsKey),
+                  let decoded = try? JSONDecoder().decode([SavedTournament].self, from: data) {
+            self.savedTournaments = decoded
+        }
+
+        // Load active tournament from Documents/active_tournament.json or UserDefaults
+        if let url = activeTournamentFileURL,
+           let data = try? Data(contentsOf: url),
+           let decoded = try? JSONDecoder().decode(SavedTournament.self, from: data),
+           !decoded.teams.isEmpty {
+            self.tournamentName = decoded.name
+            self.totalCourtsAvailable = decoded.totalCourtsAvailable > 0 ? decoded.totalCourtsAvailable : initialCourts
+            self.teams = decoded.teams
+            self.selectedDivision = decoded.selectedDivision
+            self.lastSavedAt = decoded.savedAt
+            if self.activeSavedTournamentId == nil {
+                self.activeSavedTournamentId = decoded.id
+            }
+        } else if let data = UserDefaults.standard.data(forKey: storageKey),
+                  let decoded = try? JSONDecoder().decode([TeamEntry].self, from: data),
+                  !decoded.isEmpty {
             self.teams = decoded
+            let savedDiv = UserDefaults.standard.string(forKey: selectedDivKey)
+            if let savedDiv, decoded.contains(where: { $0.division == savedDiv }) {
+                self.selectedDivision = savedDiv
+            } else {
+                self.selectedDivision = decoded.first?.division ?? "Coed Intermediate"
+            }
         } else {
             self.teams = CSVHelper.defaultTeams(totalCourts: initialCourts)
+            self.selectedDivision = self.teams.first?.division ?? "Coed Intermediate"
         }
-        self.activeTeamId = self.teams.first?.id
-        self.selectedDivision = self.teams.first?.division ?? "Coed Intermediate"
+
+        self.activeTeamId = self.teams.first(where: { $0.division == self.selectedDivision })?.id ?? self.teams.first?.id
+        self.isInitializing = false
+        saveToDisk()
         seedSampleCSVFilesInDocuments()
     }
 
@@ -91,10 +159,102 @@ final class CheckInViewModel: ObservableObject {
         }
     }
 
-    private func saveToDisk() {
-        if let encoded = try? JSONEncoder().encode(teams) {
-            UserDefaults.standard.set(encoded, forKey: storageKey)
+    func saveToDisk() {
+        let now = Date()
+        lastSavedAt = now
+
+        let activeId = activeSavedTournamentId ?? "tournament-default"
+        if activeSavedTournamentId == nil {
+            activeSavedTournamentId = activeId
         }
+
+        let currentSnapshot = SavedTournament(
+            id: activeId,
+            name: tournamentName,
+            savedAt: now,
+            totalCourtsAvailable: totalCourtsAvailable,
+            selectedDivision: selectedDivision,
+            teams: teams
+        )
+
+        UserDefaults.standard.set(totalCourtsAvailable, forKey: courtsKey)
+        UserDefaults.standard.set(tournamentName, forKey: tournamentNameKey)
+        UserDefaults.standard.set(selectedDivision, forKey: selectedDivKey)
+        UserDefaults.standard.set(activeId, forKey: activeSavedIdKey)
+
+        if let encodedTeams = try? JSONEncoder().encode(teams) {
+            UserDefaults.standard.set(encodedTeams, forKey: storageKey)
+        }
+
+        if let activeURL = activeTournamentFileURL,
+           let encodedActive = try? JSONEncoder().encode(currentSnapshot) {
+            try? encodedActive.write(to: activeURL, options: .atomic)
+        }
+
+        // Keep savedTournaments list synced with current active tournament
+        if savedTournaments.isEmpty {
+            savedTournaments = [currentSnapshot]
+        } else if let idx = savedTournaments.firstIndex(where: { $0.id == activeId }) {
+            savedTournaments[idx] = currentSnapshot
+        } else {
+            savedTournaments.insert(currentSnapshot, at: 0)
+        }
+
+        persistSavedTournamentsList()
+    }
+
+    private func persistSavedTournamentsList() {
+        if let encodedList = try? JSONEncoder().encode(savedTournaments) {
+            UserDefaults.standard.set(encodedList, forKey: savedTournamentsKey)
+            if let listURL = savedTournamentsFileURL {
+                try? encodedList.write(to: listURL, options: .atomic)
+            }
+        }
+    }
+
+    func saveTournamentSnapshot(name: String, asNew: Bool) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalName = trimmed.isEmpty ? "No Attitude Tournament" : trimmed
+        let now = Date()
+
+        isInitializing = true
+        tournamentName = finalName
+        if asNew || activeSavedTournamentId == nil {
+            let newId = "tournament-\(Int(now.timeIntervalSince1970))"
+            activeSavedTournamentId = newId
+            let newSnapshot = SavedTournament(
+                id: newId,
+                name: finalName,
+                savedAt: now,
+                totalCourtsAvailable: totalCourtsAvailable,
+                selectedDivision: selectedDivision,
+                teams: teams
+            )
+            savedTournaments.insert(newSnapshot, at: 0)
+        }
+        isInitializing = false
+        saveToDisk()
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+    }
+
+    func loadSavedTournament(_ saved: SavedTournament) {
+        isInitializing = true
+        tournamentName = saved.name
+        totalCourtsAvailable = saved.totalCourtsAvailable > 0 ? saved.totalCourtsAvailable : 18
+        teams = saved.teams
+        selectedDivision = saved.selectedDivision.isEmpty
+            ? (saved.teams.first?.division ?? "Coed Intermediate")
+            : saved.selectedDivision
+        activeSavedTournamentId = saved.id
+        activeTeamId = saved.teams.first(where: { $0.division == selectedDivision })?.id ?? saved.teams.first?.id
+        isInitializing = false
+        saveToDisk()
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+    }
+
+    func deleteSavedTournament(id: String) {
+        savedTournaments.removeAll { $0.id == id }
+        persistSavedTournamentsList()
     }
 
     var activeTeam: TeamEntry? {

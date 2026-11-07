@@ -20,8 +20,11 @@ import {
   Layers,
   Trash2,
   Sliders,
+  Save,
+  BookmarkCheck,
+  Download,
 } from 'lucide-react';
-import type { TeamEntry, FilterStatus } from './types';
+import type { TeamEntry, FilterStatus, SavedTournament } from './types';
 import {
   getDefaultTournamentTeams,
   parseTournamentCsv,
@@ -35,6 +38,10 @@ import {
 
 const STORAGE_KEY = 'no_attitude_checkin_teams_v4';
 const STORAGE_COURTS_KEY = 'no_attitude_checkin_total_courts_v1';
+const STORAGE_SELECTED_DIV_KEY = 'no_attitude_checkin_selected_div_v1';
+const STORAGE_TOURNAMENT_NAME_KEY = 'no_attitude_checkin_tournament_name_v1';
+const STORAGE_ACTIVE_SAVED_ID_KEY = 'no_attitude_checkin_active_saved_id_v1';
+const STORAGE_SAVED_TOURNAMENTS_KEY = 'no_attitude_checkin_saved_tournaments_v1';
 
 const DIVISION_BADGE_COLORS = [
   'bg-indigo-100 text-indigo-800 border-indigo-200',
@@ -46,6 +53,13 @@ const DIVISION_BADGE_COLORS = [
 ];
 
 export function App() {
+  const [tournamentName, setTournamentName] = useState<string>(() => {
+    return (
+      localStorage.getItem(STORAGE_TOURNAMENT_NAME_KEY) ||
+      `No Attitude Tournament (${new Date().toLocaleDateString()})`
+    );
+  });
+
   const [totalCourtsAvailable, setTotalCourtsAvailable] = useState<number>(() => {
     const saved = localStorage.getItem(STORAGE_COURTS_KEY);
     const parsed = saved ? parseInt(saved, 10) : 18;
@@ -72,18 +86,42 @@ export function App() {
     return getDefaultTournamentTeams(18);
   });
 
+  const [savedTournaments, setSavedTournaments] = useState<SavedTournament[]>(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_SAVED_TOURNAMENTS_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as SavedTournament[];
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    return [];
+  });
+
+  const [activeSavedTournamentId, setActiveSavedTournamentId] = useState<string | null>(() => {
+    return localStorage.getItem(STORAGE_ACTIVE_SAVED_ID_KEY) || null;
+  });
+
+  const [lastSavedAt, setLastSavedAt] = useState<string>(() => new Date().toISOString());
+
   // Track the team currently checking in so it is prominently displayed
   const [activeTeamId, setActiveTeamId] = useState<string | null>(() => teams[0]?.id ?? null);
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedDivision, setSelectedDivision] = useState<string>(
-    () => teams[0]?.division || 'Coed Intermediate'
-  );
+  const [selectedDivision, setSelectedDivision] = useState<string>(() => {
+    const savedDiv = localStorage.getItem(STORAGE_SELECTED_DIV_KEY);
+    if (savedDiv && teams.some((t) => t.division === savedDiv)) {
+      return savedDiv;
+    }
+    return teams[0]?.division || 'Coed Intermediate';
+  });
   const [statusFilter, setStatusFilter] = useState<FilterStatus>('all');
   const [isDraggingOver, setIsDraggingOver] = useState(false);
 
   // Modals
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showSaveTournamentModal, setShowSaveTournamentModal] = useState(false);
   const [uploadMode, setUploadMode] = useState<'merge' | 'replace'>('merge');
   const [autoAssignOnUpload, setAutoAssignOnUpload] = useState(true);
   const [pasteDivisionName, setPasteDivisionName] = useState('Coed Intermediate');
@@ -104,22 +142,172 @@ export function App() {
 
   const multiFileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
+  const tournamentBackupInputRef = useRef<HTMLInputElement | null>(null);
 
+  // Persist active tournament state on every change
   useEffect(() => {
     try {
+      const nowIso = new Date().toISOString();
       localStorage.setItem(STORAGE_KEY, JSON.stringify(teams));
+      localStorage.setItem(STORAGE_COURTS_KEY, String(totalCourtsAvailable));
+      localStorage.setItem(STORAGE_SELECTED_DIV_KEY, selectedDivision);
+      localStorage.setItem(STORAGE_TOURNAMENT_NAME_KEY, tournamentName);
+      if (activeSavedTournamentId) {
+        localStorage.setItem(STORAGE_ACTIVE_SAVED_ID_KEY, activeSavedTournamentId);
+      }
+      setLastSavedAt(nowIso);
+
+      // Keep the active saved tournament slot automatically synced
+      setSavedTournaments((prev) => {
+        if (prev.length === 0) {
+          const initialEntry: SavedTournament = {
+            id: activeSavedTournamentId || 'tournament-default',
+            name: tournamentName,
+            savedAt: nowIso,
+            totalCourtsAvailable,
+            selectedDivision,
+            teams,
+          };
+          localStorage.setItem(STORAGE_SAVED_TOURNAMENTS_KEY, JSON.stringify([initialEntry]));
+          if (!activeSavedTournamentId) {
+            setActiveSavedTournamentId(initialEntry.id);
+            localStorage.setItem(STORAGE_ACTIVE_SAVED_ID_KEY, initialEntry.id);
+          }
+          return [initialEntry];
+        }
+
+        const targetId = activeSavedTournamentId || prev[0].id;
+        const exists = prev.some((item) => item.id === targetId);
+        if (!exists) return prev;
+
+        const next = prev.map((item) =>
+          item.id === targetId
+            ? {
+                ...item,
+                name: tournamentName,
+                savedAt: nowIso,
+                totalCourtsAvailable,
+                selectedDivision,
+                teams,
+              }
+            : item
+        );
+        localStorage.setItem(STORAGE_SAVED_TOURNAMENTS_KEY, JSON.stringify(next));
+        return next;
+      });
     } catch {
       // ignore storage errors
     }
-  }, [teams]);
+  }, [teams, totalCourtsAvailable, selectedDivision, tournamentName, activeSavedTournamentId]);
 
-  useEffect(() => {
+  const handleSaveTournamentSnapshot = (customName?: string, asNewSlot = false) => {
+    const nameToUse = (customName ?? tournamentName).trim() || 'Tournament Check-In';
+    const nowIso = new Date().toISOString();
+    setTournamentName(nameToUse);
+
+    setSavedTournaments((prev) => {
+      let next: SavedTournament[];
+      if (!asNewSlot && activeSavedTournamentId && prev.some((t) => t.id === activeSavedTournamentId)) {
+        next = prev.map((item) =>
+          item.id === activeSavedTournamentId
+            ? {
+                ...item,
+                name: nameToUse,
+                savedAt: nowIso,
+                totalCourtsAvailable,
+                selectedDivision,
+                teams,
+              }
+            : item
+        );
+      } else {
+        const newId = `tournament-${Date.now()}`;
+        const newEntry: SavedTournament = {
+          id: newId,
+          name: nameToUse,
+          savedAt: nowIso,
+          totalCourtsAvailable,
+          selectedDivision,
+          teams,
+        };
+        setActiveSavedTournamentId(newId);
+        localStorage.setItem(STORAGE_ACTIVE_SAVED_ID_KEY, newId);
+        next = [newEntry, ...prev];
+      }
+      localStorage.setItem(STORAGE_SAVED_TOURNAMENTS_KEY, JSON.stringify(next));
+      return next;
+    });
+
+    setLastSavedAt(nowIso);
+    setUploadSuccessBanner(`Saved tournament "${nameToUse}" (${teams.length} teams, ${totalCourtsAvailable} courts).`);
+    setTimeout(() => setUploadSuccessBanner(null), 4000);
+  };
+
+  const handleLoadSavedTournament = (saved: SavedTournament) => {
+    setTournamentName(saved.name);
+    setTotalCourtsAvailable(saved.totalCourtsAvailable || 18);
+    setTeams(saved.teams);
+    setSelectedDivision(saved.selectedDivision || saved.teams[0]?.division || 'Coed Intermediate');
+    setActiveTeamId(saved.teams[0]?.id ?? null);
+    setActiveSavedTournamentId(saved.id);
+    setShowSaveTournamentModal(false);
+    setUploadSuccessBanner(`Loaded tournament "${saved.name}" (${saved.teams.length} teams).`);
+    setTimeout(() => setUploadSuccessBanner(null), 4000);
+  };
+
+  const handleDeleteSavedTournament = (id: string) => {
+    setSavedTournaments((prev) => {
+      const next = prev.filter((item) => item.id !== id);
+      localStorage.setItem(STORAGE_SAVED_TOURNAMENTS_KEY, JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const handleExportTournamentBackupJson = () => {
+    const payload: SavedTournament = {
+      id: activeSavedTournamentId || `tournament-${Date.now()}`,
+      name: tournamentName,
+      savedAt: new Date().toISOString(),
+      totalCourtsAvailable,
+      selectedDivision,
+      teams,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const safeName = tournamentName.replace(/[^a-z0-9_-]+/gi, '_').toLowerCase() || 'tournament';
+    a.href = url;
+    a.download = `${safeName}_backup.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportTournamentBackupJson = async (file: File) => {
     try {
-      localStorage.setItem(STORAGE_COURTS_KEY, String(totalCourtsAvailable));
+      const text = await file.text();
+      const parsed = JSON.parse(text) as Partial<SavedTournament>;
+      if (!parsed.teams || !Array.isArray(parsed.teams) || parsed.teams.length === 0) {
+        setUploadError('Invalid tournament backup file.');
+        return;
+      }
+      const importedEntry: SavedTournament = {
+        id: parsed.id || `tournament-${Date.now()}`,
+        name: parsed.name || file.name.replace(/\.json$/i, ''),
+        savedAt: new Date().toISOString(),
+        totalCourtsAvailable: parsed.totalCourtsAvailable || 18,
+        selectedDivision: parsed.selectedDivision || parsed.teams[0].division || 'Coed Intermediate',
+        teams: parsed.teams,
+      };
+      setSavedTournaments((prev) => {
+        const next = [importedEntry, ...prev.filter((t) => t.id !== importedEntry.id)];
+        localStorage.setItem(STORAGE_SAVED_TOURNAMENTS_KEY, JSON.stringify(next));
+        return next;
+      });
+      handleLoadSavedTournament(importedEntry);
     } catch {
-      // ignore
+      setUploadError('Could not parse tournament backup JSON file.');
     }
-  }, [totalCourtsAvailable]);
+  };
 
   const divisionsList = useMemo(() => {
     const map = new Map<
@@ -340,9 +528,9 @@ export function App() {
     setUploadError(null);
     setShowUploadModal(false);
     setUploadSuccessBanner(
-      `Loaded ${newlyLoadedTeams.length} teams across ${uploadedDivisions.size} division${
+      `Loaded & saved ${newlyLoadedTeams.length} teams across ${uploadedDivisions.size} division${
         uploadedDivisions.size > 1 ? 's' : ''
-      } (${divNames}) and assigned ${totalCourtsAvailable} courts.`
+      } (${divNames}) with ${totalCourtsAvailable} courts assigned.`
     );
     setTimeout(() => setUploadSuccessBanner(null), 5000);
   };
@@ -664,6 +852,19 @@ export function App() {
         }}
       />
 
+      {/* Hidden Tournament JSON Backup Input */}
+      <input
+        ref={tournamentBackupInputRef}
+        type="file"
+        accept=".json,application/json"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleImportTournamentBackupJson(file);
+          e.target.value = '';
+        }}
+      />
+
       {/* Drag & Drop Overlay */}
       {isDraggingOver && (
         <div className="fixed inset-0 z-50 bg-emerald-950/80 backdrop-blur-sm flex items-center justify-center p-6">
@@ -689,22 +890,50 @@ export function App() {
               </div>
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h1 className="text-lg sm:text-xl font-bold tracking-tight">
-                    Tournament Check-In
-                  </h1>
+                  <button
+                    onClick={() => setShowSaveTournamentModal(true)}
+                    className="text-lg sm:text-xl font-bold tracking-tight hover:text-emerald-300 transition flex items-center gap-1.5 cursor-pointer"
+                    title="Click to rename or manage saved tournaments"
+                  >
+                    <span>{tournamentName}</span>
+                    <Edit3 className="w-3.5 h-3.5 text-slate-400" />
+                  </button>
                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
                     <Layers className="w-3 h-3" />
                     {divisionsList.length} Divisions • {teams.length} Teams • {totalCourtsAvailable} Courts
                   </span>
+                  <button
+                    onClick={() => setShowSaveTournamentModal(true)}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-800 text-emerald-400 border border-slate-700 hover:bg-slate-700 cursor-pointer"
+                    title={`Last saved at ${new Date(lastSavedAt).toLocaleTimeString()}`}
+                  >
+                    <BookmarkCheck className="w-3 h-3" />
+                    <span>
+                      Saved{' '}
+                      {new Date(lastSavedAt).toLocaleTimeString([], {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                      })}
+                    </span>
+                  </button>
                 </div>
                 <p className="text-xs text-slate-400">
-                  Click any Division tab to view teams or edit its assigned courts (e.g. Court 1–7)
+                  Auto-saved locally • Click any Division tab to view teams or edit its assigned courts (e.g. Court 1–7)
                 </p>
               </div>
             </div>
 
             {/* Action Buttons */}
             <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => setShowSaveTournamentModal(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-xs sm:text-sm font-semibold text-emerald-300 border border-emerald-500/40 transition cursor-pointer"
+                title="Save tournament or switch between saved tournaments"
+              >
+                <Save className="w-4 h-4 text-emerald-400" />
+                <span>Save Tournament ({savedTournaments.length})</span>
+              </button>
+
               <button
                 onClick={() => setEditingDivisionCourts(selectedDivision)}
                 className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-xs sm:text-sm font-medium text-slate-100 border border-slate-700 transition cursor-pointer"
@@ -1533,6 +1762,28 @@ export function App() {
         </div>
       )}
 
+      {/* Save & Manage Tournaments Modal */}
+      {showSaveTournamentModal && (
+        <SaveTournamentModal
+          tournamentName={tournamentName}
+          lastSavedAt={lastSavedAt}
+          totalTeams={teams.length}
+          totalDivisions={divisionsList.length}
+          totalCourtsAvailable={totalCourtsAvailable}
+          activeSavedTournamentId={activeSavedTournamentId}
+          savedTournaments={savedTournaments}
+          onClose={() => setShowSaveTournamentModal(false)}
+          onSaveCurrent={(name, asNew) => {
+            handleSaveTournamentSnapshot(name, asNew);
+            setShowSaveTournamentModal(false);
+          }}
+          onLoadSaved={handleLoadSavedTournament}
+          onDeleteSaved={handleDeleteSavedTournament}
+          onExportBackup={handleExportTournamentBackupJson}
+          onTriggerImportBackup={() => tournamentBackupInputRef.current?.click()}
+        />
+      )}
+
       {/* Edit Team / Partner Modal */}
       {editingTeam && (
         <EditTeamModal
@@ -1551,6 +1802,212 @@ export function App() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+function SaveTournamentModal({
+  tournamentName,
+  lastSavedAt,
+  totalTeams,
+  totalDivisions,
+  totalCourtsAvailable,
+  activeSavedTournamentId,
+  savedTournaments,
+  onClose,
+  onSaveCurrent,
+  onLoadSaved,
+  onDeleteSaved,
+  onExportBackup,
+  onTriggerImportBackup,
+}: {
+  tournamentName: string;
+  lastSavedAt: string;
+  totalTeams: number;
+  totalDivisions: number;
+  totalCourtsAvailable: number;
+  activeSavedTournamentId: string | null;
+  savedTournaments: SavedTournament[];
+  onClose: () => void;
+  onSaveCurrent: (name: string, asNewSlot: boolean) => void;
+  onLoadSaved: (saved: SavedTournament) => void;
+  onDeleteSaved: (id: string) => void;
+  onExportBackup: () => void;
+  onTriggerImportBackup: () => void;
+}) {
+  const [nameInput, setNameInput] = useState(tournamentName);
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+      <div className="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 my-8 space-y-4">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <BookmarkCheck className="w-5 h-5 text-emerald-600" />
+            <h3 className="text-lg font-bold text-slate-900">
+              Save & Manage Tournament
+            </h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 text-slate-400 hover:text-slate-600 rounded-full cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Live Auto-Save Status Banner */}
+        <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2.5">
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+            <div>
+              <div className="text-xs font-bold text-emerald-950">
+                Active Tournament is Automatically Saved
+              </div>
+              <div className="text-[11px] text-emerald-700">
+                {totalDivisions} Divisions • {totalTeams} Teams • {totalCourtsAvailable} Courts • Last saved at{' '}
+                {new Date(lastSavedAt).toLocaleTimeString()}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onExportBackup}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-emerald-100 text-emerald-900 border border-emerald-300 text-xs font-bold transition cursor-pointer"
+              title="Download a backup .json file of this tournament"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Save Backup File</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={onTriggerImportBackup}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-xs font-semibold transition cursor-pointer"
+              title="Restore from a .json tournament backup file"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>Load File</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Name & Save Current Tournament */}
+        <div className="space-y-2.5">
+          <label className="block text-xs font-bold text-slate-700">
+            Tournament Name
+          </label>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input
+              type="text"
+              value={nameInput}
+              onChange={(e) => setNameInput(e.target.value)}
+              placeholder="e.g., No Attitude Volleyball - Nov 7"
+              className="flex-1 rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm font-semibold focus:border-emerald-500 focus:outline-none"
+            />
+            <button
+              type="button"
+              onClick={() => onSaveCurrent(nameInput, false)}
+              className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition cursor-pointer whitespace-nowrap flex items-center justify-center gap-1.5"
+            >
+              <Save className="w-4 h-4" />
+              <span>Save Tournament</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onSaveCurrent(nameInput, true)}
+              className="px-3.5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition cursor-pointer whitespace-nowrap"
+            >
+              Save as Copy
+            </button>
+          </div>
+        </div>
+
+        {/* Saved Tournaments List */}
+        <div className="space-y-2 pt-2 border-t border-slate-100">
+          <div className="text-xs font-bold uppercase tracking-wider text-slate-400">
+            Saved Tournaments ({savedTournaments.length})
+          </div>
+
+          {savedTournaments.length === 0 ? (
+            <div className="text-xs text-slate-500 py-4 text-center">
+              No saved tournament snapshots yet. Click "Save Tournament" above to save one.
+            </div>
+          ) : (
+            <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
+              {savedTournaments.map((item) => {
+                const isCurrent = item.id === activeSavedTournamentId;
+                const divCount = new Set(item.teams.map((t) => t.division)).size;
+                const checkedCount = item.teams.filter(
+                  (t) => getTeamStatus(t) === 'checked-in'
+                ).length;
+
+                return (
+                  <div
+                    key={item.id}
+                    className={`p-3 rounded-2xl border flex items-center justify-between gap-3 ${
+                      isCurrent
+                        ? 'bg-emerald-50/70 border-emerald-300'
+                        : 'bg-slate-50 border-slate-200'
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-sm text-slate-900 truncate">
+                          {item.name}
+                        </span>
+                        {isCurrent && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-600 text-white">
+                            Active & Auto-Saving
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs text-slate-500 mt-0.5">
+                        {divCount} Divisions • {checkedCount}/{item.teams.length} Teams Checked In •{' '}
+                        {item.totalCourtsAvailable} Courts • Saved{' '}
+                        {new Date(item.savedAt).toLocaleString([], {
+                          month: 'short',
+                          day: 'numeric',
+                          hour: 'numeric',
+                          minute: '2-digit',
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {!isCurrent && (
+                        <button
+                          type="button"
+                          onClick={() => onLoadSaved(item)}
+                          className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold cursor-pointer"
+                        >
+                          Load
+                        </button>
+                      )}
+                      {savedTournaments.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm(`Delete saved tournament "${item.name}"?`)) {
+                              onDeleteSaved(item.id);
+                            }
+                          }}
+                          className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                          title="Delete saved tournament"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -75,6 +75,7 @@ struct ContentView: View {
     @StateObject private var vm = CheckInViewModel()
 
     @State private var showImportSheet = false
+    @State private var showSaveTournamentSheet = false
     @State private var directPickerMode: DocumentPickerMode?
     @State private var editingTeam: TeamEntry?
     @State private var editingDivisionTarget: EditingDivisionTarget?
@@ -128,6 +129,9 @@ struct ContentView: View {
                     importReplaceMode: $importReplaceMode
                 )
             }
+            .sheet(isPresented: $showSaveTournamentSheet) {
+                SaveTournamentSheet(vm: vm)
+            }
             .sheet(item: $editingDivisionTarget) { target in
                 EditDivisionCourtsSheet(
                     vm: vm,
@@ -166,9 +170,19 @@ struct ContentView: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Text("Tournament Check-In")
-                            .font(.system(size: 17, weight: .bold))
-                            .foregroundColor(.white)
+                        Button {
+                            showSaveTournamentSheet = true
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(vm.tournamentName)
+                                    .font(.system(size: 16, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .lineLimit(1)
+                                Image(systemName: "checkmark.seal.fill")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(emeraldColor)
+                            }
+                        }
 
                         Text("\(vm.divisionsList.count) Div • \(vm.teams.count) Teams")
                             .font(.system(size: 10, weight: .bold))
@@ -178,7 +192,7 @@ struct ContentView: View {
                             .foregroundColor(emeraldColor)
                             .clipShape(Capsule())
                     }
-                    Text("Tap a Division or Court badge to edit courts (e.g. Court 1-7)")
+                    Text("Auto-saved • Tap a Division or Court badge to edit courts (e.g. Ct 1-7)")
                         .font(.system(size: 11))
                         .foregroundColor(Color.white.opacity(0.65))
                 }
@@ -187,6 +201,21 @@ struct ContentView: View {
 
                 HStack(spacing: 6) {
                     Button {
+                        showSaveTournamentSheet = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "externaldrive.fill.badge.checkmark")
+                            Text("Save")
+                        }
+                        .font(.system(size: 12, weight: .bold))
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 8)
+                        .background(Color.white.opacity(0.14))
+                        .foregroundColor(emeraldColor)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                    }
+
+                    Button {
                         editingDivisionTarget = EditingDivisionTarget(division: vm.selectedDivision)
                     } label: {
                         HStack(spacing: 4) {
@@ -194,7 +223,7 @@ struct ContentView: View {
                             Text("\(vm.totalCourtsAvailable) Cts")
                         }
                         .font(.system(size: 12, weight: .bold))
-                        .padding(.horizontal, 10)
+                        .padding(.horizontal, 9)
                         .padding(.vertical, 8)
                         .background(Color.white.opacity(0.14))
                         .foregroundColor(.white)
@@ -1118,3 +1147,126 @@ struct EditTeamSheet: View {
         }
     }
 }
+
+// MARK: - Save & Manage Tournaments Sheet
+struct SaveTournamentSheet: View {
+    @ObservedObject var vm: CheckInViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var nameInput: String = ""
+
+    private let emeraldColor = Color(red: 0.06, green: 0.73, blue: 0.51)
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Auto-Save Status") {
+                    HStack(spacing: 10) {
+                        Image(systemName: "checkmark.seal.fill")
+                            .foregroundColor(emeraldColor)
+                            .font(.system(size: 22))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Tournament Automatically Saved on Device")
+                                .font(.system(size: 14, weight: .bold))
+                            Text("\(vm.divisionsList.count) Divisions • \(vm.teams.count) Teams • \(vm.totalCourtsAvailable) Courts • Saved \(vm.lastSavedAt.formatted(date: .omitted, time: .shortened))")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+
+                Section("Tournament Name & Save") {
+                    TextField("Tournament Name", text: $nameInput)
+                        .font(.system(size: 15, weight: .semibold))
+
+                    Button {
+                        vm.saveTournamentSnapshot(name: nameInput, asNew: false)
+                        dismiss()
+                    } label: {
+                        Label("Save Current Tournament", systemImage: "externaldrive.fill.badge.checkmark")
+                            .font(.headline)
+                    }
+
+                    Button {
+                        vm.saveTournamentSnapshot(name: nameInput, asNew: true)
+                        dismiss()
+                    } label: {
+                        Label("Save as New Tournament Copy", systemImage: "plus.square.on.square")
+                    }
+                }
+
+                Section("Saved Tournaments (\(vm.savedTournaments.count))") {
+                    ForEach(vm.savedTournaments) { item in
+                        let isCurrent = item.id == vm.activeSavedTournamentId
+                        let checkedCount = item.teams.filter { $0.status == .checkedIn }.count
+                        let divCount = Set(item.teams.map { $0.division }).count
+
+                        HStack {
+                            VStack(alignment: .leading, spacing: 3) {
+                                HStack(spacing: 6) {
+                                    Text(item.name)
+                                        .font(.system(size: 14, weight: .bold))
+                                    if isCurrent {
+                                        Text("Active")
+                                            .font(.system(size: 10, weight: .heavy))
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(emeraldColor)
+                                            .foregroundColor(.black)
+                                            .clipShape(Capsule())
+                                    }
+                                }
+                                Text("\(divCount) Div • \(checkedCount)/\(item.teams.count) Checked In • \(item.totalCourtsAvailable) Courts")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text("Saved \(item.savedAt.formatted(date: .abbreviated, time: .shortened))")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+
+                            Spacer()
+
+                            if !isCurrent {
+                                Button("Load") {
+                                    vm.loadSavedTournament(item)
+                                    dismiss()
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .tint(emeraldColor)
+                                .foregroundColor(.black)
+                                .font(.caption.bold())
+                            }
+                        }
+                        .swipeActions(edge: .trailing) {
+                            if vm.savedTournaments.count > 1 {
+                                Button(role: .destructive) {
+                                    vm.deleteSavedTournament(id: item.id)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Save Tournament")
+            .navigationBarTitleDisplayMode(.inline)
+            .onAppear {
+                nameInput = vm.tournamentName
+            }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        vm.saveTournamentSnapshot(name: nameInput, asNew: false)
+                        dismiss()
+                    }
+                    .fontWeight(.bold)
+                }
+            }
+        }
+    }
+}
+

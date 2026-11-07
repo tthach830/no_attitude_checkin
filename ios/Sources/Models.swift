@@ -49,6 +49,16 @@ struct TeamEntry: Identifiable, Codable, Equatable {
     }
 }
 
+struct SavedTournament: Identifiable, Codable, Equatable {
+    var id: String = UUID().uuidString
+    var name: String
+    var savedAt: Date
+    var totalCourtsAvailable: Int
+    var selectedDivision: String
+    var teams: [TeamEntry]
+}
+
+
 enum CSVHelper {
     static let coedIntermediateCSV = """
     Pool Name,Courts,Team Name,Checked In

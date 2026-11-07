@@ -26,3 +26,13 @@ export interface DivisionCourtRange {
 export type CheckInStatus = 'checked-in' | 'partial' | 'unarrived';
 
 export type FilterStatus = 'all' | 'pending' | 'partial' | 'checked-in';
+
+export interface SavedTournament {
+  id: string;
+  name: string;
+  savedAt: string;
+  totalCourtsAvailable: number;
+  selectedDivision: string;
+  teams: TeamEntry[];
+}
+
