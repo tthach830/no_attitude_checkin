@@ -96,8 +96,11 @@ export async function getSqliteDb(): Promise<Database> {
     dbInstance!.run(`
       CREATE TABLE IF NOT EXISTS checkin (
         id TEXT PRIMARY KEY,
+        Tournament_Name TEXT,
         team_name TEXT NOT NULL,
         division TEXT NOT NULL,
+        total_courts INTEGER DEFAULT 1,
+        Total_Pools INTEGER DEFAULT 1,
         pool_name TEXT NOT NULL,
         courts TEXT NOT NULL,
         division_courts TEXT,
@@ -112,10 +115,26 @@ export async function getSqliteDb(): Promise<Database> {
         is_checked_in INTEGER NOT NULL,
         checked_in_at TEXT,
         notes TEXT,
-        tournament_name TEXT,
         updated_at TEXT NOT NULL
       );
     `);
+
+    // Ensure backwards compatibility with any databases already saved in IndexedDB
+    try {
+      dbInstance!.run(`ALTER TABLE checkin ADD COLUMN Tournament_Name TEXT;`);
+    } catch {
+      // column already exists
+    }
+    try {
+      dbInstance!.run(`ALTER TABLE checkin ADD COLUMN total_courts INTEGER DEFAULT 1;`);
+    } catch {
+      // column already exists
+    }
+    try {
+      dbInstance!.run(`ALTER TABLE checkin ADD COLUMN Total_Pools INTEGER DEFAULT 1;`);
+    } catch {
+      // column already exists
+    }
 
     // Create index on status & division for fast query performance
     dbInstance!.run(`
@@ -140,13 +159,66 @@ export async function syncTeamsToSqlite(
     const db = await getSqliteDb();
     const nowIso = new Date().toISOString();
 
+    // Precompute division-level metadata: total_courts and Total_Pools
+    const divisionStatsMap = new Map<string, { totalCourts: number; totalPools: number }>();
+    const divisionTeamsMap = new Map<string, TeamEntry[]>();
+
+    for (const t of teams) {
+      const div = t.division || 'General';
+      if (!divisionTeamsMap.has(div)) {
+        divisionTeamsMap.set(div, []);
+      }
+      divisionTeamsMap.get(div)!.push(t);
+    }
+
+    for (const [div, dTeams] of divisionTeamsMap.entries()) {
+      // 1. Total_Pools for this division (e.g. Pool 1, Pool 2 -> 2)
+      const pools = new Set(dTeams.map((t) => t.poolName).filter(Boolean));
+      const totalPools = Math.max(1, pools.size);
+
+      // 2. total_courts for this division (e.g. "1-4" -> 4, "1-7" -> 7, "8-11" -> 4)
+      let totalCourts = 0;
+      const divCourtsStr = dTeams.find((t) => t.divisionCourts)?.divisionCourts;
+      if (divCourtsStr) {
+        const rangeMatch = divCourtsStr.match(/(\d+)\s*[-–—]\s*(\d+)/);
+        if (rangeMatch) {
+          const start = parseInt(rangeMatch[1], 10);
+          const end = parseInt(rangeMatch[2], 10);
+          if (Number.isFinite(start) && Number.isFinite(end)) {
+            totalCourts = Math.abs(end - start) + 1;
+          }
+        }
+      }
+
+      // If no explicit range string, count unique court numbers across division teams
+      if (!totalCourts) {
+        const courtsSet = new Set<number>();
+        dTeams.forEach((t) => {
+          if (t.courts && t.courts !== '-') {
+            t.courts.split(/[-–—,\s]+/).forEach((part) => {
+              const num = parseInt(part, 10);
+              if (Number.isFinite(num)) courtsSet.add(num);
+            });
+          }
+        });
+        totalCourts = courtsSet.size > 0 ? courtsSet.size : 1;
+      }
+
+      divisionStatsMap.set(div, { totalCourts, totalPools });
+    }
+
     db.run('BEGIN TRANSACTION;');
+
+    const effectiveTournamentName = tournamentName.trim() || 'NA_11072026';
 
     const insertStmt = db.prepare(`
       INSERT OR REPLACE INTO checkin (
         id,
+        Tournament_Name,
         team_name,
         division,
+        total_courts,
+        Total_Pools,
         pool_name,
         courts,
         division_courts,
@@ -161,9 +233,8 @@ export async function syncTeamsToSqlite(
         is_checked_in,
         checked_in_at,
         notes,
-        tournament_name,
         updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     `);
 
     for (const team of teams) {
@@ -172,11 +243,18 @@ export async function syncTeamsToSqlite(
       const teamName = team.rawTeamName || formatDisplayTeamName(team);
       const p1 = team.players[0];
       const p2 = team.players[1];
+      const divMeta = divisionStatsMap.get(team.division || 'General') || {
+        totalCourts: 1,
+        totalPools: 1,
+      };
 
       insertStmt.run([
         team.id,
+        effectiveTournamentName,
         teamName,
         team.division,
+        divMeta.totalCourts,
+        divMeta.totalPools,
         team.poolName,
         team.courts,
         team.divisionCourts || null,
@@ -191,7 +269,6 @@ export async function syncTeamsToSqlite(
         isCheckedIn,
         team.checkedInAt || null,
         team.notes || null,
-        tournamentName,
         nowIso,
       ]);
     }

@@ -23,6 +23,7 @@ import {
   Unlock,
   ShieldCheck,
   Database,
+  LogOut,
 } from 'lucide-react';
 import type { TeamEntry, FilterStatus, SavedTournament } from './types';
 import {
@@ -67,10 +68,11 @@ const DIVISION_BADGE_COLORS = [
 
 export function App() {
   const [tournamentName, setTournamentName] = useState<string>(() => {
-    return (
-      localStorage.getItem(STORAGE_TOURNAMENT_NAME_KEY) ||
-      `No Attitude Tournament (${new Date().toLocaleDateString()})`
-    );
+    const saved = localStorage.getItem(STORAGE_TOURNAMENT_NAME_KEY);
+    if (saved && !saved.startsWith('No Attitude Tournament (')) {
+      return saved;
+    }
+    return 'NA_11072026';
   });
 
   const [totalCourtsAvailable, setTotalCourtsAvailable] = useState<number>(() => {
@@ -1135,6 +1137,15 @@ export function App() {
                   >
                     <Upload className="w-3.5 h-3.5" />
                     <span>CSVs</span>
+                  </button>
+
+                  <button
+                    onClick={handleAdminLogout}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 active:scale-95 text-rose-300 border border-rose-500/40 text-xs font-bold transition cursor-pointer"
+                    title="Log Out of Admin Mode"
+                  >
+                    <LogOut className="w-3.5 h-3.5 text-rose-400" />
+                    <span className="hidden sm:inline">Logout</span>
                   </button>
                 </>
               )}
@@ -2694,7 +2705,7 @@ function SqliteManagerModal({
   tournamentName: string;
 }) {
   const [queryText, setQueryText] = useState(
-    'SELECT team_name, division, pool_name, courts, is_checked_in, checked_in_at FROM checkin ORDER BY division, pool_name;'
+    'SELECT Tournament_Name, team_name, division, total_courts, Total_Pools, pool_name, courts, is_checked_in, checked_in_at FROM checkin ORDER BY division, pool_name;'
   );
   const [queryResult, setQueryResult] = useState<{ columns: string[]; values: any[][] } | null>(null);
   const [queryError, setQueryError] = useState<string | null>(null);
@@ -2728,20 +2739,20 @@ function SqliteManagerModal({
 
   const sampleQueries = [
     {
-      label: 'All Teams Status',
-      sql: 'SELECT team_name, division, pool_name, courts, is_checked_in, checked_in_at FROM checkin ORDER BY division, pool_name;',
+      label: 'All Teams + Courts/Pools',
+      sql: 'SELECT Tournament_Name, team_name, division, total_courts, Total_Pools, pool_name, courts, is_checked_in, checked_in_at FROM checkin ORDER BY division, pool_name;',
+    },
+    {
+      label: 'Division Courts & Pools',
+      sql: 'SELECT division, total_courts, Total_Pools, COUNT(*) as teams_count, SUM(is_checked_in) as checked_in FROM checkin GROUP BY division;',
     },
     {
       label: 'Checked-In Only',
-      sql: 'SELECT team_name, division, courts, checked_in_at FROM checkin WHERE is_checked_in = 1;',
+      sql: 'SELECT Tournament_Name, team_name, division, total_courts, courts, checked_in_at FROM checkin WHERE is_checked_in = 1;',
     },
     {
       label: 'Pending Only',
-      sql: 'SELECT team_name, division, courts, player1_name, player2_name FROM checkin WHERE is_checked_in = 0;',
-    },
-    {
-      label: 'Division Stats',
-      sql: 'SELECT division, COUNT(*) as total, SUM(is_checked_in) as checked_in, COUNT(*) - SUM(is_checked_in) as pending FROM checkin GROUP BY division;',
+      sql: 'SELECT Tournament_Name, team_name, division, total_courts, courts, player1_name, player2_name FROM checkin WHERE is_checked_in = 0;',
     },
   ];
 

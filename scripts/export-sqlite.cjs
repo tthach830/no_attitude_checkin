@@ -10,8 +10,11 @@ async function exportToSqlite() {
   db.run(`
     CREATE TABLE IF NOT EXISTS checkin (
       id TEXT PRIMARY KEY,
+      Tournament_Name TEXT,
       team_name TEXT NOT NULL,
       division TEXT NOT NULL,
+      total_courts INTEGER DEFAULT 1,
+      Total_Pools INTEGER DEFAULT 1,
       pool_name TEXT NOT NULL,
       courts TEXT NOT NULL,
       division_courts TEXT,
@@ -26,7 +29,6 @@ async function exportToSqlite() {
       is_checked_in INTEGER NOT NULL,
       checked_in_at TEXT,
       notes TEXT,
-      tournament_name TEXT,
       updated_at TEXT NOT NULL
     );
   `);
@@ -37,11 +39,14 @@ async function exportToSqlite() {
   const sampleTeams = [
     {
       id: 'team-1',
+      tournament_name: 'NA_11072026',
       name: 'Amanda Dupes / Patrick',
       div: 'Coed Intermediate',
+      total_courts: 4,
+      total_pools: 3,
       pool: 'Pool 1',
       courts: '1-3',
-      divCourts: '1-7',
+      divCourts: '1-4',
       p1: 'Amanda Dupes',
       p1_chk: 1,
       p1_time: new Date().toISOString(),
@@ -54,11 +59,14 @@ async function exportToSqlite() {
     },
     {
       id: 'team-2',
+      tournament_name: 'NA_11072026',
       name: 'Sarah Connor / Kyle Reese',
       div: 'Coed Intermediate',
+      total_courts: 4,
+      total_pools: 3,
       pool: 'Pool 1',
       courts: '1-3',
-      divCourts: '1-7',
+      divCourts: '1-4',
       p1: 'Sarah Connor',
       p1_chk: 1,
       p1_time: new Date().toISOString(),
@@ -71,11 +79,14 @@ async function exportToSqlite() {
     },
     {
       id: 'team-3',
+      tournament_name: 'NA_11072026',
       name: 'Alex Morgan / Tobin Heath',
       div: 'Women Upper Intermediate',
+      total_courts: 4,
+      total_pools: 2,
       pool: 'Pool 2',
       courts: '8-11',
-      divCourts: '8-12',
+      divCourts: '8-11',
       p1: 'Alex Morgan',
       p1_chk: 0,
       p1_time: null,
@@ -90,19 +101,23 @@ async function exportToSqlite() {
 
   const stmt = db.prepare(`
     INSERT INTO checkin (
-      id, team_name, division, pool_name, courts, division_courts,
+      id, Tournament_Name, team_name, division, total_courts, Total_Pools,
+      pool_name, courts, division_courts,
       player1_name, player1_checked_in, player1_checked_in_at,
       player2_name, player2_checked_in, player2_checked_in_at,
       players_json, team_status, is_checked_in, checked_in_at,
-      tournament_name, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+      notes, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
   `);
 
   for (const t of sampleTeams) {
     stmt.run([
       t.id,
+      t.tournament_name,
       t.name,
       t.div,
+      t.total_courts,
+      t.total_pools,
       t.pool,
       t.courts,
       t.divCourts,
@@ -116,7 +131,7 @@ async function exportToSqlite() {
       t.status,
       t.is_checked_in,
       t.checked_in_at,
-      'No Attitude Tournament',
+      null,
       new Date().toISOString(),
     ]);
   }
