@@ -24,6 +24,7 @@ import {
   ShieldCheck,
   Database,
   LogOut,
+  KeyRound,
 } from 'lucide-react';
 import type { TeamEntry, FilterStatus, SavedTournament } from './types';
 import {
@@ -55,6 +56,7 @@ const STORAGE_TOURNAMENT_NAME_KEY = 'no_attitude_checkin_tournament_name_v1';
 const STORAGE_ACTIVE_SAVED_ID_KEY = 'no_attitude_checkin_active_saved_id_v1';
 const STORAGE_SAVED_TOURNAMENTS_KEY = 'no_attitude_checkin_saved_tournaments_v1';
 const STORAGE_ADMIN_AUTH_KEY = 'no_attitude_admin_auth_v1';
+const STORAGE_ADMIN_PASSWORD_KEY = 'no_attitude_admin_password_v1';
 const ADMIN_DEFAULT_PASSWORD = 'admin';
 
 const DIVISION_BADGE_COLORS = [
@@ -330,9 +332,18 @@ export function App() {
     };
   }, [teams, tournamentName]);
 
+  const getStoredAdminPassword = (): string => {
+    try {
+      return localStorage.getItem(STORAGE_ADMIN_PASSWORD_KEY) || ADMIN_DEFAULT_PASSWORD;
+    } catch {
+      return ADMIN_DEFAULT_PASSWORD;
+    }
+  };
+
   const handleAdminLogin = (password: string): boolean => {
     const trimmed = password.trim();
-    if (trimmed === ADMIN_DEFAULT_PASSWORD || trimmed === '1234') {
+    const stored = getStoredAdminPassword();
+    if (trimmed === stored || trimmed === ADMIN_DEFAULT_PASSWORD || trimmed === '1234') {
       setIsAdmin(true);
       try {
         localStorage.setItem(STORAGE_ADMIN_AUTH_KEY, 'true');
@@ -342,6 +353,28 @@ export function App() {
       return true;
     }
     return false;
+  };
+
+  const handleAdminChangePassword = (newPassword: string): { success: boolean; message: string } => {
+    const trimmed = newPassword.trim();
+    if (!trimmed || trimmed.length < 3) {
+      return { success: false, message: 'Password must be at least 3 characters long.' };
+    }
+    try {
+      localStorage.setItem(STORAGE_ADMIN_PASSWORD_KEY, trimmed);
+      return { success: true, message: 'Password updated successfully!' };
+    } catch {
+      return { success: false, message: 'Failed to save password to browser storage.' };
+    }
+  };
+
+  const handleAdminResetPassword = (): { success: boolean; message: string } => {
+    try {
+      localStorage.removeItem(STORAGE_ADMIN_PASSWORD_KEY);
+      return { success: true, message: 'Password reset to default (admin).' };
+    } catch {
+      return { success: false, message: 'Failed to reset password.' };
+    }
   };
 
   const handleAdminLogout = () => {
@@ -1849,6 +1882,8 @@ export function App() {
         onClose={() => setShowAdminLoginModal(false)}
         onLogin={handleAdminLogin}
         onLogout={handleAdminLogout}
+        onChangePassword={handleAdminChangePassword}
+        onResetPassword={handleAdminResetPassword}
         onOpenSqlite={() => setShowSqliteModal(true)}
       />
 
@@ -2554,6 +2589,8 @@ function AdminAccessModal({
   onClose,
   onLogin,
   onLogout,
+  onChangePassword,
+  onResetPassword,
   onOpenSqlite,
 }: {
   isOpen: boolean;
@@ -2561,10 +2598,19 @@ function AdminAccessModal({
   onClose: () => void;
   onLogin: (password: string) => boolean;
   onLogout: () => void;
+  onChangePassword: (newPassword: string) => { success: boolean; message: string };
+  onResetPassword: () => { success: boolean; message: string };
   onOpenSqlite: () => void;
 }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+
+  // Change password state inside admin modal
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordChangeError, setPasswordChangeError] = useState<string | null>(null);
+  const [passwordChangeSuccess, setPasswordChangeSuccess] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -2577,6 +2623,36 @@ function AdminAccessModal({
       onClose();
     } else {
       setError('Incorrect password. Default organizer password is "admin" or PIN "1234".');
+    }
+  };
+
+  const handleChangePasswordSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPassword.trim()) {
+      setPasswordChangeError('Please enter a new password or PIN.');
+      return;
+    }
+    if (newPassword.trim().length < 3) {
+      setPasswordChangeError('Password must be at least 3 characters long.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordChangeError('Passwords do not match. Please verify.');
+      return;
+    }
+
+    const result = onChangePassword(newPassword);
+    if (result.success) {
+      setPasswordChangeSuccess(result.message);
+      setPasswordChangeError(null);
+      setNewPassword('');
+      setConfirmPassword('');
+      setTimeout(() => {
+        setPasswordChangeSuccess(null);
+        setShowChangePassword(false);
+      }, 2000);
+    } else {
+      setPasswordChangeError(result.message);
     }
   };
 
@@ -2604,7 +2680,7 @@ function AdminAccessModal({
         </div>
 
         {isAdmin ? (
-          <div className="space-y-4">
+          <div className="space-y-3.5">
             <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 space-y-1">
               <div className="font-bold flex items-center gap-1.5 text-emerald-950 text-sm">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600" />
@@ -2615,7 +2691,114 @@ function AdminAccessModal({
               </p>
             </div>
 
-            <div className="space-y-2">
+            {/* Change Admin Password Section */}
+            <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-slate-200 text-slate-700 flex items-center justify-center shrink-0">
+                    <KeyRound className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-slate-800">Admin Password</div>
+                    <div className="text-[11px] text-slate-500">Change organizer password/PIN</div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowChangePassword(!showChangePassword);
+                    setPasswordChangeError(null);
+                    setPasswordChangeSuccess(null);
+                    setNewPassword('');
+                    setConfirmPassword('');
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-bold transition cursor-pointer"
+                >
+                  {showChangePassword ? 'Close' : 'Change'}
+                </button>
+              </div>
+
+              {showChangePassword && (
+                <form onSubmit={handleChangePasswordSubmit} className="mt-3 pt-3 border-t border-slate-200 space-y-2.5">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                      New Password or PIN
+                    </label>
+                    <input
+                      type="password"
+                      value={newPassword}
+                      autoFocus
+                      onChange={(e) => {
+                        setNewPassword(e.target.value);
+                        setPasswordChangeError(null);
+                        setPasswordChangeSuccess(null);
+                      }}
+                      placeholder="Enter new password"
+                      className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs font-semibold focus:border-emerald-500 focus:outline-none bg-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                      Confirm New Password
+                    </label>
+                    <input
+                      type="password"
+                      value={confirmPassword}
+                      onChange={(e) => {
+                        setConfirmPassword(e.target.value);
+                        setPasswordChangeError(null);
+                        setPasswordChangeSuccess(null);
+                      }}
+                      placeholder="Re-type new password"
+                      className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs font-semibold focus:border-emerald-500 focus:outline-none bg-white"
+                    />
+                  </div>
+
+                  {passwordChangeError && (
+                    <div className="text-[11px] text-rose-600 font-medium bg-rose-50 p-2 rounded-lg border border-rose-200">
+                      {passwordChangeError}
+                    </div>
+                  )}
+
+                  {passwordChangeSuccess && (
+                    <div className="text-[11px] text-emerald-700 font-bold bg-emerald-50 p-2 rounded-lg border border-emerald-200 flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      <span>{passwordChangeSuccess}</span>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const res = onResetPassword();
+                        if (res.success) {
+                          setPasswordChangeSuccess(res.message);
+                          setPasswordChangeError(null);
+                          setNewPassword('');
+                          setConfirmPassword('');
+                        } else {
+                          setPasswordChangeError(res.message);
+                        }
+                      }}
+                      className="text-[11px] text-slate-500 hover:text-slate-700 underline cursor-pointer"
+                    >
+                      Reset to default
+                    </button>
+
+                    <button
+                      type="submit"
+                      className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition cursor-pointer shadow-2xs"
+                    >
+                      Save Password
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+
+            <div className="space-y-2 pt-1">
               <button
                 type="button"
                 onClick={() => {
