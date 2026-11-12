@@ -209,7 +209,11 @@ export async function syncTeamsToSqlite(
 
     db.run('BEGIN TRANSACTION;');
 
-    const effectiveTournamentName = tournamentName.trim() || 'NA_11072026';
+    const effectiveTournamentName =
+      tournamentName.toLowerCase().includes('11/7') ||
+      tournamentName.toLowerCase().includes('no attitude')
+        ? 'NA_11072026'
+        : tournamentName.trim() || 'NA_11072026';
 
     const insertStmt = db.prepare(`
       INSERT OR REPLACE INTO checkin (

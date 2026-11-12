@@ -69,10 +69,10 @@ const DIVISION_BADGE_COLORS = [
 export function App() {
   const [tournamentName, setTournamentName] = useState<string>(() => {
     const saved = localStorage.getItem(STORAGE_TOURNAMENT_NAME_KEY);
-    if (saved && !saved.startsWith('No Attitude Tournament (')) {
+    if (saved && saved !== 'NA_11072026' && !saved.startsWith('No Attitude Tournament (')) {
       return saved;
     }
-    return 'NA_11072026';
+    return 'No Attitude Tournament (11/7/2026) Check-In';
   });
 
   const [totalCourtsAvailable, setTotalCourtsAvailable] = useState<number>(() => {
@@ -1036,48 +1036,53 @@ export function App() {
       {/* Header — Mobile-First Compact Layout */}
       <header className="bg-slate-900 text-white pt-safe sticky top-0 z-30 shadow-md">
         <div className="max-w-5xl mx-auto px-3 sm:px-4 pt-2.5 pb-2">
-          {/* Top Row: Brand + Title on Left | Action Buttons on Right */}
-          <div className="flex items-center justify-between gap-2">
+          {/* Row 1: Title on a line by itself */}
+          <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-800/80">
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-400 shrink-0">
-                <UserCheck className="w-4 h-4" />
+              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-400 shrink-0">
+                <UserCheck className="w-4 h-4 sm:w-5 sm:h-5" />
               </div>
               <div className="min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={() => (isAdmin ? setShowSaveTournamentModal(true) : setShowAdminLoginModal(true))}
-                    className="text-sm sm:text-lg font-extrabold tracking-tight hover:text-emerald-300 transition flex items-center gap-1 truncate cursor-pointer"
-                    title={isAdmin ? "Tournament Name & Settings" : "Admin Login to Edit Tournament"}
-                  >
-                    <span className="truncate">{tournamentName}</span>
-                    {isAdmin && <Edit3 className="w-3 h-3 text-slate-400 shrink-0" />}
-                  </button>
-                  <span
-                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0"
-                    title={`Live Sync Active • SQLite synced (${sqliteRowCount} rows) • Last saved at ${new Date(lastSavedAt).toLocaleTimeString()}`}
-                  >
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    <span>{liveSyncStatus === 'live' ? 'LIVE' : 'SAVED'}</span>
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5 text-[11px] text-slate-400 truncate">
-                  <span>{divisionsList.length} Divs</span>
-                  <span>•</span>
-                  <span>{teams.length} Teams</span>
-                  <span>•</span>
-                  <span className="text-emerald-400 font-semibold">{totalCourtsAvailable} Courts</span>
-                  {sqliteRowCount > 0 && (
-                    <>
-                      <span>•</span>
-                      <span className="text-sky-300 font-medium">SQLite: {sqliteRowCount}</span>
-                    </>
-                  )}
-                </div>
+                <button
+                  onClick={() => (isAdmin ? setShowSaveTournamentModal(true) : setShowAdminLoginModal(true))}
+                  className="text-left font-black tracking-tight text-white hover:text-emerald-300 transition flex items-center gap-1.5 cursor-pointer text-base sm:text-xl leading-tight"
+                  title={isAdmin ? "Click to rename tournament or save settings" : "Admin Login to Edit Tournament"}
+                >
+                  <span className="truncate">{tournamentName}</span>
+                  {isAdmin && <Edit3 className="w-3.5 h-3.5 text-slate-400 shrink-0" />}
+                </button>
               </div>
             </div>
 
-            {/* Right Controls: Gated by Admin Access */}
             <div className="flex items-center gap-1.5 shrink-0">
+              <span
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0"
+                title={`Live Sync Active • SQLite synced (${sqliteRowCount} rows) • Last saved at ${new Date(lastSavedAt).toLocaleTimeString()}`}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span>{liveSyncStatus === 'live' ? 'LIVE' : 'SAVED'}</span>
+              </span>
+            </div>
+          </div>
+
+          {/* Row 2: Roster Stats on Left | Action Controls on Right */}
+          <div className="flex items-center justify-between gap-2 pt-2 pb-0.5 flex-wrap sm:flex-nowrap">
+            <div className="flex items-center gap-1.5 text-xs text-slate-400 font-medium">
+              <span className="font-bold text-slate-200">{divisionsList.length} Divs</span>
+              <span>•</span>
+              <span className="font-bold text-slate-200">{teams.length} Teams</span>
+              <span>•</span>
+              <span className="text-emerald-400 font-bold">{totalCourtsAvailable} Courts</span>
+              {sqliteRowCount > 0 && (
+                <>
+                  <span>•</span>
+                  <span className="text-sky-300 font-semibold">SQLite: {sqliteRowCount}</span>
+                </>
+              )}
+            </div>
+
+            {/* Right Controls: Gated by Admin Access */}
+            <div className="flex items-center gap-1.5 shrink-0 ml-auto">
               {!isAdmin ? (
                 /* Player / Viewer View: Only Admin Login Button */
                 <button
