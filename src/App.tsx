@@ -19,6 +19,10 @@ import {
   Save,
   BookmarkCheck,
   Download,
+  Lock,
+  Unlock,
+  ShieldCheck,
+  Database,
 } from 'lucide-react';
 import type { TeamEntry, FilterStatus, SavedTournament } from './types';
 import {
@@ -37,6 +41,11 @@ import {
   fetchLatestLiveState,
   subscribeToLiveUpdates,
 } from './utils/liveSync';
+import {
+  syncTeamsToSqlite,
+  querySqlite,
+  downloadSqliteDatabase,
+} from './utils/sqliteDb';
 
 const STORAGE_KEY = 'no_attitude_checkin_teams_v4';
 const STORAGE_COURTS_KEY = 'no_attitude_checkin_total_courts_v1';
@@ -44,6 +53,8 @@ const STORAGE_SELECTED_DIV_KEY = 'no_attitude_checkin_selected_div_v1';
 const STORAGE_TOURNAMENT_NAME_KEY = 'no_attitude_checkin_tournament_name_v1';
 const STORAGE_ACTIVE_SAVED_ID_KEY = 'no_attitude_checkin_active_saved_id_v1';
 const STORAGE_SAVED_TOURNAMENTS_KEY = 'no_attitude_checkin_saved_tournaments_v1';
+const STORAGE_ADMIN_AUTH_KEY = 'no_attitude_admin_auth_v1';
+const ADMIN_DEFAULT_PASSWORD = 'admin';
 
 const DIVISION_BADGE_COLORS = [
   'bg-indigo-100 text-indigo-800 border-indigo-200',
@@ -121,7 +132,28 @@ export function App() {
   const [liveSyncStatus, setLiveSyncStatus] = useState<'connecting' | 'live' | 'offline'>('connecting');
   const senderIdRef = useRef<string>(getClientSenderId());
 
+  // Admin Authentication State
+  const [isAdmin, setIsAdmin] = useState<boolean>(() => {
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const adminQuery = urlParams.get('admin');
+      if (adminQuery === 'true' || adminQuery === '1' || adminQuery === 'admin') {
+        localStorage.setItem(STORAGE_ADMIN_AUTH_KEY, 'true');
+        return true;
+      }
+      return localStorage.getItem(STORAGE_ADMIN_AUTH_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  // SQLite Database State
+  const [sqliteRowCount, setSqliteRowCount] = useState<number>(0);
+  const [sqliteLastSyncedAt, setSqliteLastSyncedAt] = useState<string | null>(null);
+
   // Modals
+  const [showAdminLoginModal, setShowAdminLoginModal] = useState(false);
+  const [showSqliteModal, setShowSqliteModal] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showSaveTournamentModal, setShowSaveTournamentModal] = useState(false);
   const [uploadMode, setUploadMode] = useState<'merge' | 'replace'>('merge');
@@ -267,6 +299,57 @@ export function App() {
       // ignore storage errors
     }
   }, [teams, totalCourtsAvailable, selectedDivision, tournamentName, activeSavedTournamentId]);
+
+  // Synchronize all teams and their live check-in timestamps to SQLite `checkin` table
+  useEffect(() => {
+    if (teams.length === 0) return;
+    let active = true;
+
+    syncTeamsToSqlite(teams, tournamentName)
+      .then((res) => {
+        if (!active) return;
+        if (res.success) {
+          setSqliteRowCount(res.rowsSaved);
+          setSqliteLastSyncedAt(
+            new Date().toLocaleTimeString([], {
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+            })
+          );
+        }
+      })
+      .catch((err) => {
+        console.error('[SQLite] Auto-sync to checkin table failed:', err);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [teams, tournamentName]);
+
+  const handleAdminLogin = (password: string): boolean => {
+    const trimmed = password.trim();
+    if (trimmed === ADMIN_DEFAULT_PASSWORD || trimmed === '1234') {
+      setIsAdmin(true);
+      try {
+        localStorage.setItem(STORAGE_ADMIN_AUTH_KEY, 'true');
+      } catch {
+        // ignore
+      }
+      return true;
+    }
+    return false;
+  };
+
+  const handleAdminLogout = () => {
+    setIsAdmin(false);
+    try {
+      localStorage.removeItem(STORAGE_ADMIN_AUTH_KEY);
+    } catch {
+      // ignore
+    }
+  };
 
   const handleSaveTournamentSnapshot = (customName?: string, asNewSlot = false) => {
     const nameToUse = (customName ?? tournamentName).trim() || 'Tournament Check-In';
@@ -960,16 +1043,16 @@ export function App() {
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
                   <button
-                    onClick={() => setShowSaveTournamentModal(true)}
+                    onClick={() => (isAdmin ? setShowSaveTournamentModal(true) : setShowAdminLoginModal(true))}
                     className="text-sm sm:text-lg font-extrabold tracking-tight hover:text-emerald-300 transition flex items-center gap-1 truncate cursor-pointer"
-                    title="Tournament Name"
+                    title={isAdmin ? "Tournament Name & Settings" : "Admin Login to Edit Tournament"}
                   >
                     <span className="truncate">{tournamentName}</span>
-                    <Edit3 className="w-3 h-3 text-slate-400 shrink-0" />
+                    {isAdmin && <Edit3 className="w-3 h-3 text-slate-400 shrink-0" />}
                   </button>
                   <span
                     className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0"
-                    title={`Live Sync Active • Last saved at ${new Date(lastSavedAt).toLocaleTimeString()}`}
+                    title={`Live Sync Active • SQLite synced (${sqliteRowCount} rows) • Last saved at ${new Date(lastSavedAt).toLocaleTimeString()}`}
                   >
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                     <span>{liveSyncStatus === 'live' ? 'LIVE' : 'SAVED'}</span>
@@ -981,41 +1064,80 @@ export function App() {
                   <span>{teams.length} Teams</span>
                   <span>•</span>
                   <span className="text-emerald-400 font-semibold">{totalCourtsAvailable} Courts</span>
+                  {sqliteRowCount > 0 && (
+                    <>
+                      <span>•</span>
+                      <span className="text-sky-300 font-medium">SQLite: {sqliteRowCount}</span>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
 
-            {/* Right Controls: Save, Courts, Upload CSVs */}
+            {/* Right Controls: Gated by Admin Access */}
             <div className="flex items-center gap-1.5 shrink-0">
-              <button
-                onClick={() => setShowSaveTournamentModal(true)}
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-xs font-semibold text-slate-100 border border-slate-700 transition cursor-pointer"
-                title="Saved Tournaments"
-              >
-                <Save className="w-3.5 h-3.5 text-emerald-400" />
-                <span className="hidden sm:inline">Save</span>
-              </button>
+              {!isAdmin ? (
+                /* Player / Viewer View: Only Admin Login Button */
+                <button
+                  onClick={() => setShowAdminLoginModal(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-xs font-semibold text-slate-200 border border-slate-700 transition cursor-pointer"
+                  title="Admin Access (Upload CSVs, Courts, Save, SQLite)"
+                >
+                  <Lock className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Admin</span>
+                </button>
+              ) : (
+                /* Admin View: Full Controls for Upload CSVs, Courts, Save, SQLite */
+                <>
+                  <button
+                    onClick={() => setShowAdminLoginModal(true)}
+                    className="inline-flex items-center gap-1 px-2 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold transition cursor-pointer"
+                    title="Admin Mode Active — click to manage or lock"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+                    <span className="hidden sm:inline">Admin</span>
+                  </button>
 
-              <button
-                onClick={() => setEditingDivisionCourts(selectedDivision)}
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-xs font-semibold text-slate-100 border border-slate-700 transition cursor-pointer"
-                title="Assign Courts"
-              >
-                <Sliders className="w-3.5 h-3.5 text-emerald-400" />
-                <span>{totalCourtsAvailable} Cts</span>
-              </button>
+                  <button
+                    onClick={() => setShowSqliteModal(true)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-sky-300 border border-sky-800/80 transition cursor-pointer"
+                    title="SQLite Database (checkin table & query tool)"
+                  >
+                    <Database className="w-3.5 h-3.5 text-sky-400" />
+                    <span>SQLite ({sqliteRowCount})</span>
+                  </button>
 
-              <button
-                onClick={() => {
-                  setUploadError(null);
-                  setShowUploadModal(true);
-                }}
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-xs font-extrabold text-slate-950 transition shadow-2xs cursor-pointer"
-                title="Upload CSVs"
-              >
-                <Upload className="w-3.5 h-3.5" />
-                <span>CSVs</span>
-              </button>
+                  <button
+                    onClick={() => setShowSaveTournamentModal(true)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-xs font-semibold text-slate-100 border border-slate-700 transition cursor-pointer"
+                    title="Saved Tournaments & Backups"
+                  >
+                    <Save className="w-3.5 h-3.5 text-emerald-400" />
+                    <span className="hidden sm:inline">Save</span>
+                  </button>
+
+                  <button
+                    onClick={() => setEditingDivisionCourts(selectedDivision)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-xs font-semibold text-slate-100 border border-slate-700 transition cursor-pointer"
+                    title="Assign & Edit Courts"
+                  >
+                    <Sliders className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>{totalCourtsAvailable} Cts</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setUploadError(null);
+                      setShowUploadModal(true);
+                    }}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-xs font-extrabold text-slate-950 transition shadow-2xs cursor-pointer"
+                    title="Upload CSV Files"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>CSVs</span>
+                  </button>
+                </>
+              )}
             </div>
           </div>
 
@@ -1037,7 +1159,7 @@ export function App() {
                 >
                   <button
                     onClick={() => {
-                      if (isSelected) {
+                      if (isSelected && isAdmin) {
                         setEditingDivisionCourts(div.division);
                       } else {
                         setSelectedDivision(div.division);
@@ -1059,22 +1181,35 @@ export function App() {
                     </span>
                   </button>
 
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedDivision(div.division);
-                      setEditingDivisionCourts(div.division);
-                    }}
-                    className={`mr-1.5 px-2 py-0.5 rounded-lg text-[11px] font-bold flex items-center gap-1 transition cursor-pointer ${
-                      isSelected
-                        ? 'bg-slate-950 text-emerald-400 hover:bg-slate-800'
-                        : 'bg-slate-950/60 text-emerald-300 hover:bg-slate-950'
-                    }`}
-                    title={`Edit assigned courts for ${div.division}`}
-                  >
-                    <span>Ct {div.courtLabel}</span>
-                    <Edit3 className="w-2.5 h-2.5 opacity-80" />
-                  </button>
+                  {isAdmin ? (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedDivision(div.division);
+                        setEditingDivisionCourts(div.division);
+                      }}
+                      className={`mr-1.5 px-2 py-0.5 rounded-lg text-[11px] font-bold flex items-center gap-1 transition cursor-pointer ${
+                        isSelected
+                          ? 'bg-slate-950 text-emerald-400 hover:bg-slate-800'
+                          : 'bg-slate-950/60 text-emerald-300 hover:bg-slate-950'
+                      }`}
+                      title={`Edit assigned courts for ${div.division}`}
+                    >
+                      <span>Ct {div.courtLabel}</span>
+                      <Edit3 className="w-2.5 h-2.5 opacity-80" />
+                    </button>
+                  ) : (
+                    <span
+                      className={`mr-1.5 px-2 py-0.5 rounded-lg text-[11px] font-bold flex items-center gap-1 ${
+                        isSelected
+                          ? 'bg-slate-950/80 text-emerald-400'
+                          : 'bg-slate-950/40 text-emerald-300'
+                      }`}
+                      title={`Courts assigned: ${div.courtLabel}`}
+                    >
+                      <span>Ct {div.courtLabel}</span>
+                    </span>
+                  )}
                 </div>
               );
             })}
@@ -1156,7 +1291,7 @@ export function App() {
                 );
               })}
 
-              {(stats.fullTeams > 0 || stats.partialTeams > 0) && (
+              {isAdmin && (stats.fullTeams > 0 || stats.partialTeams > 0) && (
                 <button
                   onClick={handleClearCheckIns}
                   className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-rose-50 text-xs font-semibold text-slate-600 hover:text-rose-600 whitespace-nowrap transition cursor-pointer"
@@ -1167,7 +1302,7 @@ export function App() {
                 </button>
               )}
 
-              {divisionsList.length > 1 && (
+              {isAdmin && divisionsList.length > 1 && (
                 <button
                   onClick={() => handleRemoveDivision(selectedDivision)}
                   className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-rose-50 text-xs font-semibold text-slate-600 hover:text-rose-600 whitespace-nowrap transition cursor-pointer"
@@ -1252,30 +1387,47 @@ export function App() {
                   }`}
                 >
                   <div className="flex items-center gap-2 flex-wrap min-w-0">
-                    <button
-                      onClick={() => setEditingDivisionCourts(group.division)}
-                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-extrabold border cursor-pointer ${getDivisionColorClass(
-                        group.division
-                      )}`}
-                      title="Click to edit courts for this division"
-                    >
-                      <span className="truncate">{group.division}</span>
-                      <Edit3 className="w-2.5 h-2.5 opacity-70 shrink-0" />
-                    </button>
+                    {isAdmin ? (
+                      <button
+                        onClick={() => setEditingDivisionCourts(group.division)}
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-extrabold border cursor-pointer ${getDivisionColorClass(
+                          group.division
+                        )}`}
+                        title="Click to edit courts for this division"
+                      >
+                        <span className="truncate">{group.division}</span>
+                        <Edit3 className="w-2.5 h-2.5 opacity-70 shrink-0" />
+                      </button>
+                    ) : (
+                      <span
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-extrabold border ${getDivisionColorClass(
+                          group.division
+                        )}`}
+                      >
+                        <span className="truncate">{group.division}</span>
+                      </span>
+                    )}
 
                     <span className="font-extrabold text-slate-900 text-sm sm:text-base">
                       {group.poolName}
                     </span>
 
                     {group.courtsLabel && group.courtsLabel !== '-' && (
-                      <button
-                        onClick={() => setEditingDivisionCourts(group.division)}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-900 hover:bg-slate-800 text-white cursor-pointer"
-                        title="Click to edit division court assignment"
-                      >
-                        <MapPin className="w-2.5 h-2.5 text-emerald-400" />
-                        <span>Ct {group.courtsLabel}</span>
-                      </button>
+                      isAdmin ? (
+                        <button
+                          onClick={() => setEditingDivisionCourts(group.division)}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-900 hover:bg-slate-800 text-white cursor-pointer"
+                          title="Click to edit division court assignment"
+                        >
+                          <MapPin className="w-2.5 h-2.5 text-emerald-400" />
+                          <span>Ct {group.courtsLabel}</span>
+                        </button>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-900 text-white">
+                          <MapPin className="w-2.5 h-2.5 text-emerald-400" />
+                          <span>Ct {group.courtsLabel}</span>
+                        </span>
+                      )
                     )}
                   </div>
 
@@ -1363,16 +1515,18 @@ export function App() {
                                   </span>
                                 </span>
 
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setEditingTeam(team);
-                                  }}
-                                  className="p-1 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 transition cursor-pointer"
-                                  title="Edit team"
-                                >
-                                  <Edit3 className="w-3.5 h-3.5" />
-                                </button>
+                                {isAdmin && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setEditingTeam(team);
+                                    }}
+                                    className="p-1 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 transition cursor-pointer"
+                                    title="Edit team"
+                                  >
+                                    <Edit3 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
                               </div>
                             </div>
 
@@ -1668,8 +1822,28 @@ export function App() {
           onDeleteSaved={handleDeleteSavedTournament}
           onExportBackup={handleExportTournamentBackupJson}
           onTriggerImportBackup={() => tournamentBackupInputRef.current?.click()}
+          onExportSqlite={() => downloadSqliteDatabase('checkin.sqlite')}
         />
       )}
+
+      {/* Admin Access & Login Modal */}
+      <AdminAccessModal
+        isOpen={showAdminLoginModal}
+        isAdmin={isAdmin}
+        onClose={() => setShowAdminLoginModal(false)}
+        onLogin={handleAdminLogin}
+        onLogout={handleAdminLogout}
+        onOpenSqlite={() => setShowSqliteModal(true)}
+      />
+
+      {/* SQLite Database Manager Modal */}
+      <SqliteManagerModal
+        isOpen={showSqliteModal}
+        onClose={() => setShowSqliteModal(false)}
+        totalRows={sqliteRowCount}
+        lastSyncedAt={sqliteLastSyncedAt}
+        tournamentName={tournamentName}
+      />
 
       {/* Edit Team / Partner Modal */}
       {editingTeam && (
@@ -1707,6 +1881,7 @@ function SaveTournamentModal({
   onDeleteSaved,
   onExportBackup,
   onTriggerImportBackup,
+  onExportSqlite,
 }: {
   tournamentName: string;
   lastSavedAt: string;
@@ -1721,6 +1896,7 @@ function SaveTournamentModal({
   onDeleteSaved: (id: string) => void;
   onExportBackup: () => void;
   onTriggerImportBackup: () => void;
+  onExportSqlite: () => void;
 }) {
   const [nameInput, setNameInput] = useState(tournamentName);
 
@@ -1758,7 +1934,17 @@ function SaveTournamentModal({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={onExportSqlite}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-900 border border-sky-300 text-xs font-bold transition cursor-pointer"
+              title="Download SQLite database (.sqlite file) containing table checkin"
+            >
+              <Database className="w-3.5 h-3.5 text-sky-600" />
+              <span>Export SQLite DB</span>
+            </button>
+
             <button
               type="button"
               onClick={onExportBackup}
@@ -2342,6 +2528,346 @@ function EditTeamModal({
           </div>
         </div>
       </form>
+    </div>
+  );
+}
+
+function AdminAccessModal({
+  isOpen,
+  isAdmin,
+  onClose,
+  onLogin,
+  onLogout,
+  onOpenSqlite,
+}: {
+  isOpen: boolean;
+  isAdmin: boolean;
+  onClose: () => void;
+  onLogin: (password: string) => boolean;
+  onLogout: () => void;
+  onOpenSqlite: () => void;
+}) {
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  if (!isOpen) return null;
+
+  const handleLoginSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const success = onLogin(password);
+    if (success) {
+      setPassword('');
+      setError(null);
+      onClose();
+    } else {
+      setError('Incorrect password. Default organizer password is "admin" or PIN "1234".');
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            {isAdmin ? (
+              <ShieldCheck className="w-5 h-5 text-emerald-600" />
+            ) : (
+              <Lock className="w-5 h-5 text-amber-600" />
+            )}
+            <h3 className="text-lg font-bold text-slate-900">
+              {isAdmin ? 'Admin Mode (Active)' : 'Admin Login Required'}
+            </h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 text-slate-400 hover:text-slate-600 rounded-full cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {isAdmin ? (
+          <div className="space-y-4">
+            <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 space-y-1">
+              <div className="font-bold flex items-center gap-1.5 text-emerald-950 text-sm">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <span>You have Admin Permissions</span>
+              </div>
+              <p>
+                You can upload CSVs, assign and edit court numbers, save/restore tournament rosters, and manage the SQLite database.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenSqlite();
+                }}
+                className="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer"
+              >
+                <Database className="w-4 h-4 text-sky-400" />
+                <span>Open SQLite Database Inspector</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  onLogout();
+                  onClose();
+                }}
+                className="w-full py-2.5 px-4 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs border border-rose-200 flex items-center justify-center gap-2 transition cursor-pointer"
+              >
+                <Lock className="w-4 h-4 text-rose-500" />
+                <span>Lock / Exit Admin Mode</span>
+              </button>
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={handleLoginSubmit} className="space-y-3.5">
+            <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-900">
+              <span className="font-bold">Organizer Controls Protected:</span> Uploading CSVs, configuring court numbers, and saving tournament rosters require admin authentication.
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Admin Password or PIN
+              </label>
+              <input
+                type="password"
+                value={password}
+                autoFocus
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setError(null);
+                }}
+                placeholder="Enter password (default: admin)"
+                className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm font-semibold focus:border-emerald-500 focus:outline-none"
+              />
+              <div className="text-[11px] text-slate-500 mt-1">
+                Tip: Default password is <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-800 font-mono">admin</code> or PIN <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-800 font-mono">1234</code>.
+              </div>
+            </div>
+
+            {error && (
+              <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 font-medium">
+                {error}
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2.5 rounded-xl bg-slate-100 text-slate-700 text-xs font-semibold hover:bg-slate-200 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition cursor-pointer shadow-xs flex items-center gap-1.5"
+              >
+                <Unlock className="w-4 h-4" />
+                <span>Unlock Admin</span>
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SqliteManagerModal({
+  isOpen,
+  onClose,
+  totalRows,
+  lastSyncedAt,
+  tournamentName,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  totalRows: number;
+  lastSyncedAt: string | null;
+  tournamentName: string;
+}) {
+  const [queryText, setQueryText] = useState(
+    'SELECT team_name, division, pool_name, courts, is_checked_in, checked_in_at FROM checkin ORDER BY division, pool_name;'
+  );
+  const [queryResult, setQueryResult] = useState<{ columns: string[]; values: any[][] } | null>(null);
+  const [queryError, setQueryError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleRunQuery = async (sql: string) => {
+    setIsLoading(true);
+    setQueryError(null);
+    try {
+      const res = await querySqlite(sql);
+      if (res.length > 0) {
+        setQueryResult(res[0]);
+      } else {
+        setQueryResult({ columns: [], values: [] });
+      }
+    } catch (err: any) {
+      setQueryError(err?.message || String(err));
+      setQueryResult(null);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      handleRunQuery(queryText);
+    }
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  const sampleQueries = [
+    {
+      label: 'All Teams Status',
+      sql: 'SELECT team_name, division, pool_name, courts, is_checked_in, checked_in_at FROM checkin ORDER BY division, pool_name;',
+    },
+    {
+      label: 'Checked-In Only',
+      sql: 'SELECT team_name, division, courts, checked_in_at FROM checkin WHERE is_checked_in = 1;',
+    },
+    {
+      label: 'Pending Only',
+      sql: 'SELECT team_name, division, courts, player1_name, player2_name FROM checkin WHERE is_checked_in = 0;',
+    },
+    {
+      label: 'Division Stats',
+      sql: 'SELECT division, COUNT(*) as total, SUM(is_checked_in) as checked_in, COUNT(*) - SUM(is_checked_in) as pending FROM checkin GROUP BY division;',
+    },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+      <div className="bg-white rounded-3xl max-w-4xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 my-6 space-y-4 max-h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100 shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-sky-100 text-sky-700 flex items-center justify-center">
+              <Database className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+                <span>SQLite Database</span>
+                <span className="font-mono text-xs px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-semibold">
+                  table: checkin
+                </span>
+              </h3>
+              <p className="text-xs text-slate-500">
+                {tournamentName} • {totalRows} teams stored • Auto-synced {lastSyncedAt ? `at ${lastSyncedAt}` : 'in real-time'}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 text-slate-400 hover:text-slate-600 rounded-full cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Action bar with Download SQLite binary button */}
+        <div className="p-3.5 rounded-2xl bg-sky-50 border border-sky-200 flex items-center justify-between gap-3 flex-wrap shrink-0">
+          <div className="text-xs text-sky-950">
+            <span className="font-bold">Real SQLite binary:</span> Full schema with player check-in timestamps, court assignments, and status persisted in IndexedDB via WebAssembly.
+          </div>
+          <button
+            type="button"
+            onClick={() => downloadSqliteDatabase('checkin.sqlite')}
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold transition shadow-xs cursor-pointer"
+            title="Download checkin.sqlite file directly"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Download checkin.sqlite</span>
+          </button>
+        </div>
+
+        {/* Quick Query Pills */}
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0 pb-1">
+          <span className="text-xs font-bold text-slate-500 shrink-0">Queries:</span>
+          {sampleQueries.map((sq) => (
+            <button
+              key={sq.label}
+              type="button"
+              onClick={() => {
+                setQueryText(sq.sql);
+                handleRunQuery(sq.sql);
+              }}
+              className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 whitespace-nowrap transition cursor-pointer"
+            >
+              {sq.label}
+            </button>
+          ))}
+        </div>
+
+        {/* SQL Query Box */}
+        <div className="flex flex-col sm:flex-row gap-2 shrink-0">
+          <input
+            type="text"
+            value={queryText}
+            onChange={(e) => setQueryText(e.target.value)}
+            placeholder="Enter SQL (e.g. SELECT * FROM checkin;)"
+            className="flex-1 font-mono text-xs rounded-xl border border-slate-300 px-3.5 py-2 focus:border-sky-500 focus:outline-none"
+          />
+          <button
+            type="button"
+            onClick={() => handleRunQuery(queryText)}
+            disabled={isLoading}
+            className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition cursor-pointer shrink-0"
+          >
+            {isLoading ? 'Running...' : 'Run SQL'}
+          </button>
+        </div>
+
+        {/* Query Results / Table */}
+        <div className="flex-1 overflow-auto rounded-2xl border border-slate-200 bg-slate-50 min-h-[220px]">
+          {queryError ? (
+            <div className="p-4 text-xs font-mono text-rose-600 bg-rose-50">
+              Error executing SQL: {queryError}
+            </div>
+          ) : !queryResult || queryResult.values.length === 0 ? (
+            <div className="p-8 text-center text-xs text-slate-500">
+              No rows returned.
+            </div>
+          ) : (
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-slate-200 text-slate-800 font-bold sticky top-0">
+                  {queryResult.columns.map((col, idx) => (
+                    <th key={idx} className="p-2 border-b border-slate-300 font-mono">
+                      {col}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 bg-white">
+                {queryResult.values.map((row, rowIdx) => (
+                  <tr key={rowIdx} className="hover:bg-slate-50">
+                    {row.map((val, colIdx) => (
+                      <td key={colIdx} className="p-2 font-mono text-[11px] text-slate-700 whitespace-nowrap">
+                        {val === null || val === undefined ? (
+                          <span className="text-slate-300 italic">null</span>
+                        ) : (
+                          String(val)
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
