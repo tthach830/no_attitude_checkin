@@ -367,7 +367,7 @@ export function App() {
   const handleAdminLogin = (password: string): boolean => {
     const trimmed = password.trim();
     const stored = getStoredAdminPassword();
-    if (trimmed === stored || trimmed === ADMIN_DEFAULT_PASSWORD || trimmed === '1234') {
+    if (trimmed === stored) {
       setIsAdmin(true);
       try {
         localStorage.setItem(STORAGE_ADMIN_AUTH_KEY, 'true');
@@ -2675,7 +2675,7 @@ function AdminAccessModal({
       setError(null);
       onClose();
     } else {
-      setError('Incorrect password. Default organizer password is "admin" or PIN "1234".');
+      setError('Incorrect password. Please try again.');
     }
   };
 
@@ -2895,12 +2895,9 @@ function AdminAccessModal({
                   setPassword(e.target.value);
                   setError(null);
                 }}
-                placeholder="Enter password (default: admin)"
+                placeholder="Enter password"
                 className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm font-semibold focus:border-emerald-500 focus:outline-none"
               />
-              <div className="text-[11px] text-slate-500 mt-1">
-                Tip: Default password is <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-800 font-mono">admin</code> or PIN <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-800 font-mono">1234</code>.
-              </div>
             </div>
 
             {error && (
