@@ -170,6 +170,7 @@ export function App() {
   const [editingTeam, setEditingTeam] = useState<TeamEntry | null>(null);
   const [editingDivisionCourts, setEditingDivisionCourts] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<{
+    teamId: string;
     teamName: string;
     division: string;
     poolName: string;
@@ -560,6 +561,7 @@ export function App() {
 
   const triggerCheckInBanner = (_team: TeamEntry, statusText: string) => {
     setToastMessage({
+      teamId: _team.id,
       teamName: _team.rawTeamName || formatDisplayTeamName(_team),
       division: _team.division,
       poolName: _team.poolName,
@@ -567,8 +569,8 @@ export function App() {
       statusText,
     });
     setTimeout(() => {
-      setToastMessage((prev) => (prev?.statusText === statusText ? null : prev));
-    }, 4000);
+      setToastMessage((prev) => (prev?.teamId === _team.id ? null : prev));
+    }, 6000);
   };
 
   // Toggle entire team check-in with 1 tap
@@ -593,7 +595,7 @@ export function App() {
         triggerCheckInBanner(
           updated,
           targetChecked
-            ? `Checked In! Go to Court ${updated.courts} (${updated.poolName})`
+            ? `Checked-In! Go to Court ${updated.courts} (${updated.poolName})`
             : 'Check-In Cleared'
         );
         broadcastTeamCheckInToLive(updated);
@@ -634,9 +636,9 @@ export function App() {
         triggerCheckInBanner(
           updated,
           allChecked
-            ? `Full Team Checked In! Go to Court ${updated.courts}`
+            ? `Checked-In! Go to Court ${updated.courts} (${updated.poolName})`
             : toggledPlayerChecked
-            ? `${toggledPlayerName} Checked In! Court ${updated.courts} (${updated.poolName})`
+            ? `${toggledPlayerName} Checked-In! Go to Court ${updated.courts} (${updated.poolName})`
             : `${toggledPlayerName} Unchecked`
         );
         broadcastTeamCheckInToLive(updated);
@@ -1382,22 +1384,6 @@ export function App() {
           </div>
         )}
 
-        {toastMessage && (
-          <div className="bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-md border border-emerald-500/60 flex items-center justify-between gap-3 text-xs sm:text-sm">
-            <div className="flex items-center gap-2 min-w-0">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span className="font-bold truncate text-white">{toastMessage.teamName}</span>
-              <span className="text-emerald-400 font-semibold">• {toastMessage.statusText}</span>
-            </div>
-            <button
-              onClick={() => setToastMessage(null)}
-              className="text-slate-400 hover:text-white p-1 cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        )}
-
         {groupedByDivisionAndPool.length === 0 ? (
           <div className="bg-white rounded-3xl p-8 text-center border border-slate-200 shadow-xs my-4">
             <Users className="w-10 h-10 text-slate-300 mx-auto mb-2.5" />
@@ -1504,7 +1490,7 @@ export function App() {
                     return (
                       <div
                         key={team.id}
-                        className={`p-3.5 sm:p-4 transition-colors ${
+                        className={`p-3.5 sm:p-4 transition-colors relative ${
                           isFull
                             ? 'bg-emerald-50/35 hover:bg-emerald-50/55 border-l-4 border-l-emerald-500'
                             : isPartial
@@ -1512,6 +1498,41 @@ export function App() {
                             : 'bg-rose-50/70 hover:bg-rose-100/70 border-l-4 border-l-rose-400'
                         }`}
                       >
+                        {/* Checked-In Alert Popup directly on top of this team card */}
+                        {toastMessage && toastMessage.teamId === team.id && (
+                          <div className="mb-3 p-3 rounded-2xl bg-slate-950 text-white border-2 border-emerald-400 shadow-xl flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/40">
+                                <CheckCircle2 className="w-4 h-4" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-xs sm:text-sm font-black text-white flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-emerald-400">Checked-In!</span>
+                                  <span>Go to Court {team.courts}</span>
+                                  <span className="text-emerald-300 font-bold">({team.poolName})</span>
+                                </div>
+                                {toastMessage.statusText &&
+                                  !toastMessage.statusText.startsWith('Checked-In! Go to Court') && (
+                                    <div className="text-[11px] text-slate-300 font-medium truncate">
+                                      {toastMessage.statusText}
+                                    </div>
+                                  )}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setToastMessage(null);
+                              }}
+                              className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition cursor-pointer shrink-0"
+                              title="Dismiss"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        )}
+
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                           {/* Left: Team Name + Pool/Court Badge + 2-Column Partner Buttons */}
                           <div className="flex-1 min-w-0">
