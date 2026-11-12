@@ -1536,10 +1536,10 @@ export function App() {
                                     Checked-In!
                                   </span>
                                   <span className="text-white drop-shadow-sm">
-                                    Go to Court <span className="text-amber-300 font-extrabold underline decoration-amber-400/70 underline-offset-2">{team.courts}</span>
+                                    Go to Court <span className="text-amber-300 font-extrabold">{team.courts}</span>
                                   </span>
-                                  <span className="text-emerald-300 font-extrabold bg-emerald-950/90 px-2.5 py-0.5 rounded-lg border border-emerald-400/40 text-xs sm:text-sm shadow-xs">
-                                    {team.poolName}
+                                  <span className="text-emerald-200 font-medium">
+                                    ({team.poolName})
                                   </span>
                                 </div>
                                 {toastMessage.statusText &&
