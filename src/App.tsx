@@ -195,7 +195,16 @@ export function App() {
     fetchLatestLiveState().then((remote) => {
       if (!active) return;
       if (remote && Array.isArray(remote.teams) && remote.teams.length > 0) {
-        setTournamentName(remote.tournamentName);
+        if (
+          remote.tournamentName &&
+          remote.tournamentName !== 'NA_11072026' &&
+          !remote.tournamentName.startsWith('No Attitude Tournament (') &&
+          remote.tournamentName !== 'No Attitude Tournament (11/7/2026) Check-In'
+        ) {
+          setTournamentName(remote.tournamentName);
+        } else {
+          setTournamentName('No Attitude Check-In');
+        }
         setTotalCourtsAvailable(remote.totalCourtsAvailable);
         setTeams(remote.teams);
         setSelectedDivision((prev) =>
@@ -213,7 +222,16 @@ export function App() {
       if (payload.senderId === senderIdRef.current) return;
 
       if (payload.type === 'full_state' && Array.isArray(payload.teams) && payload.teams.length > 0) {
-        setTournamentName(payload.tournamentName || 'Tournament Check-In');
+        if (
+          payload.tournamentName &&
+          payload.tournamentName !== 'NA_11072026' &&
+          !payload.tournamentName.startsWith('No Attitude Tournament (') &&
+          payload.tournamentName !== 'No Attitude Tournament (11/7/2026) Check-In'
+        ) {
+          setTournamentName(payload.tournamentName);
+        } else {
+          setTournamentName('No Attitude Check-In');
+        }
         setTotalCourtsAvailable(payload.totalCourtsAvailable || 18);
         setTeams(payload.teams);
       } else if (payload.type === 'team_update' && payload.updatedTeam) {
@@ -575,82 +593,84 @@ export function App() {
     });
     setTimeout(() => {
       setToastMessage((prev) => (prev?.teamId === _team.id ? null : prev));
-    }, 6000);
+    }, 10000);
   };
 
   // Toggle entire team check-in with 1 tap
   const toggleFullTeamCheckIn = (teamId: string) => {
-    setTeams((prev) =>
-      prev.map((team) => {
-        if (team.id !== teamId) return team;
-        const currentStatus = getTeamStatus(team);
-        const targetChecked = currentStatus !== 'checked-in';
-        const nowIso = targetChecked ? new Date().toISOString() : undefined;
+    const currentTeam = teams.find((t) => t.id === teamId);
+    if (!currentTeam) return;
 
-        const updated: TeamEntry = {
-          ...team,
-          checkedInAt: nowIso,
-          players: team.players.map((p) => ({
-            ...p,
-            checkedIn: targetChecked,
-            checkedInAt: targetChecked ? p.checkedInAt || nowIso : undefined,
-          })),
-        };
+    const currentStatus = getTeamStatus(currentTeam);
+    const targetChecked = currentStatus !== 'checked-in';
+    const nowIso = targetChecked ? new Date().toISOString() : undefined;
 
-        triggerCheckInBanner(
-          updated,
-          targetChecked
-            ? `Checked-In! Go to Court ${updated.courts} (${updated.poolName})`
-            : 'Check-In Cleared'
-        );
-        broadcastTeamCheckInToLive(updated);
+    const updatedTeam: TeamEntry = {
+      ...currentTeam,
+      checkedInAt: nowIso,
+      players: currentTeam.players.map((p) => ({
+        ...p,
+        checkedIn: targetChecked,
+        checkedInAt: targetChecked ? p.checkedInAt || nowIso : undefined,
+      })),
+    };
 
-        return updated;
-      })
-    );
+    setTeams((prev) => prev.map((t) => (t.id === teamId ? updatedTeam : t)));
+
+    if (targetChecked) {
+      triggerCheckInBanner(
+        updatedTeam,
+        `Checked-In! Go to Court ${updatedTeam.courts} (${updatedTeam.poolName})`
+      );
+    } else {
+      setToastMessage(null);
+    }
+    broadcastTeamCheckInToLive(updatedTeam);
   };
 
   // Toggle an individual player slot with 1 tap
   const togglePlayerCheckIn = (teamId: string, playerId: string) => {
-    setTeams((prev) =>
-      prev.map((team) => {
-        if (team.id !== teamId) return team;
-        const nowIso = new Date().toISOString();
-        let toggledPlayerName = '';
-        let toggledPlayerChecked = false;
+    const currentTeam = teams.find((t) => t.id === teamId);
+    if (!currentTeam) return;
 
-        const updatedPlayers = team.players.map((p) => {
-          if (p.id !== playerId) return p;
-          const nextChecked = !p.checkedIn;
-          toggledPlayerName = p.name;
-          toggledPlayerChecked = nextChecked;
-          return {
-            ...p,
-            checkedIn: nextChecked,
-            checkedInAt: nextChecked ? nowIso : undefined,
-          };
-        });
+    const nowIso = new Date().toISOString();
+    let toggledPlayerName = '';
+    let isNowChecked = false;
 
-        const allChecked = updatedPlayers.every((p) => p.checkedIn);
-        const updated: TeamEntry = {
-          ...team,
-          players: updatedPlayers,
-          checkedInAt: allChecked ? team.checkedInAt || nowIso : undefined,
-        };
+    const updatedPlayers = currentTeam.players.map((p) => {
+      if (p.id !== playerId) return p;
+      const nextChecked = !p.checkedIn;
+      toggledPlayerName = p.name;
+      isNowChecked = nextChecked;
+      return {
+        ...p,
+        checkedIn: nextChecked,
+        checkedInAt: nextChecked ? nowIso : undefined,
+      };
+    });
 
-        triggerCheckInBanner(
-          updated,
-          allChecked
-            ? `Checked-In! Go to Court ${updated.courts} (${updated.poolName})`
-            : toggledPlayerChecked
-            ? `${toggledPlayerName} Checked-In! Go to Court ${updated.courts} (${updated.poolName})`
-            : `${toggledPlayerName} Unchecked`
-        );
-        broadcastTeamCheckInToLive(updated);
+    const allChecked = updatedPlayers.every((p) => p.checkedIn);
+    const updatedTeam: TeamEntry = {
+      ...currentTeam,
+      players: updatedPlayers,
+      checkedInAt: allChecked ? currentTeam.checkedInAt || nowIso : undefined,
+    };
 
-        return updated;
-      })
-    );
+    setTeams((prev) => prev.map((t) => (t.id === teamId ? updatedTeam : t)));
+
+    if (isNowChecked) {
+      triggerCheckInBanner(
+        updatedTeam,
+        allChecked
+          ? `Checked-In! Go to Court ${updatedTeam.courts} (${updatedTeam.poolName})`
+          : toggledPlayerName
+          ? `${toggledPlayerName} Checked-In! Go to Court ${updatedTeam.courts} (${updatedTeam.poolName})`
+          : `Checked-In! Go to Court ${updatedTeam.courts} (${updatedTeam.poolName})`
+      );
+    } else {
+      setToastMessage(null);
+    }
+    broadcastTeamCheckInToLive(updatedTeam);
   };
 
   // Process multiple CSV files (from multi-file picker, folder picker, or drag-and-drop)
@@ -1505,21 +1525,28 @@ export function App() {
                       >
                         {/* Checked-In Alert Popup directly on top of this team card */}
                         {toastMessage && toastMessage.teamId === team.id && (
-                          <div className="mb-3 p-3 rounded-2xl bg-slate-950 text-white border-2 border-emerald-400 shadow-xl flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/40">
-                                <CheckCircle2 className="w-4 h-4" />
+                          <div className="mb-4 p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-slate-950 via-slate-900 to-emerald-950 text-white border-2 border-emerald-400 ring-4 ring-emerald-400/30 shadow-2xl flex items-center justify-between gap-3.5 sm:gap-4 animate-in fade-in zoom-in-95 slide-in-from-top-3 duration-200">
+                            <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                              <div className="w-11 h-11 sm:w-13 sm:h-13 rounded-2xl bg-emerald-500/25 text-emerald-400 flex items-center justify-center shrink-0 border-2 border-emerald-400/60 shadow-lg shadow-emerald-500/20">
+                                <CheckCircle2 className="w-6 h-6 sm:w-7 sm:h-7 text-emerald-400" />
                               </div>
-                              <div className="min-w-0">
-                                <div className="text-xs sm:text-sm font-black text-white flex items-center gap-1.5 flex-wrap">
-                                  <span className="text-emerald-400">Checked-In!</span>
-                                  <span>Go to Court {team.courts}</span>
-                                  <span className="text-emerald-300 font-bold">({team.poolName})</span>
+                              <div className="min-w-0 space-y-1">
+                                <div className="text-base sm:text-lg md:text-xl font-black text-white flex items-center gap-2 flex-wrap leading-tight">
+                                  <span className="text-emerald-400 tracking-wide uppercase text-xs sm:text-sm font-black px-2.5 py-0.5 rounded-lg bg-emerald-500/20 border border-emerald-400/50">
+                                    Checked-In!
+                                  </span>
+                                  <span className="text-white drop-shadow-sm">
+                                    Go to Court <span className="text-amber-300 font-extrabold underline decoration-amber-400/70 underline-offset-2">{team.courts}</span>
+                                  </span>
+                                  <span className="text-emerald-300 font-extrabold bg-emerald-950/90 px-2.5 py-0.5 rounded-lg border border-emerald-400/40 text-xs sm:text-sm shadow-xs">
+                                    {team.poolName}
+                                  </span>
                                 </div>
                                 {toastMessage.statusText &&
                                   !toastMessage.statusText.startsWith('Checked-In! Go to Court') && (
-                                    <div className="text-[11px] text-slate-300 font-medium truncate">
-                                      {toastMessage.statusText}
+                                    <div className="text-xs sm:text-sm text-emerald-200 font-semibold flex items-center gap-1.5 truncate">
+                                      <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                                      <span>{toastMessage.statusText}</span>
                                     </div>
                                   )}
                               </div>
@@ -1530,10 +1557,10 @@ export function App() {
                                 e.stopPropagation();
                                 setToastMessage(null);
                               }}
-                              className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition cursor-pointer shrink-0"
+                              className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-white/10 transition cursor-pointer shrink-0"
                               title="Dismiss"
                             >
-                              <X className="w-4 h-4" />
+                              <X className="w-5 h-5 sm:w-6 sm:h-6" />
                             </button>
                           </div>
                         )}
