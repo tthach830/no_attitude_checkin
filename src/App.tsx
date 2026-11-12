@@ -1310,10 +1310,6 @@ export function App() {
                 }}
               />
             </div>
-
-            <div className="text-[11px] sm:text-xs font-semibold text-rose-300/90 shrink-0">
-              {stats.pendingTeams} Not Checked In
-            </div>
           </div>
         </div>
 
