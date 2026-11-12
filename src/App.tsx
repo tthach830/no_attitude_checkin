@@ -107,9 +107,6 @@ export function App() {
 
   const [lastSavedAt, setLastSavedAt] = useState<string>(() => new Date().toISOString());
 
-  // Track the team currently checking in so it is prominently displayed
-  const [activeTeamId, setActiveTeamId] = useState<string | null>(() => teams[0]?.id ?? null);
-
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDivision, setSelectedDivision] = useState<string>(() => {
     const savedDiv = localStorage.getItem(STORAGE_SELECTED_DIV_KEY);
@@ -319,7 +316,6 @@ export function App() {
     setTotalCourtsAvailable(saved.totalCourtsAvailable || 18);
     setTeams(saved.teams);
     setSelectedDivision(saved.selectedDivision || saved.teams[0]?.division || 'Coed Intermediate');
-    setActiveTeamId(saved.teams[0]?.id ?? null);
     setActiveSavedTournamentId(saved.id);
     setShowSaveTournamentModal(false);
     setUploadSuccessBanner(`Loaded tournament "${saved.name}" (${saved.teams.length} teams).`);
@@ -444,20 +440,17 @@ export function App() {
     return DIVISION_BADGE_COLORS[(idx >= 0 ? idx : 0) % DIVISION_BADGE_COLORS.length];
   };
 
-  const activeTeam = useMemo(
-    () => teams.find((t) => t.id === activeTeamId) || null,
-    [teams, activeTeamId]
-  );
-
-  const triggerCheckInBanner = (team: TeamEntry, statusText: string) => {
-    setActiveTeamId(team.id);
+  const triggerCheckInBanner = (_team: TeamEntry, statusText: string) => {
     setToastMessage({
-      teamName: team.rawTeamName || formatDisplayTeamName(team),
-      division: team.division,
-      poolName: team.poolName,
-      courts: team.courts,
+      teamName: _team.rawTeamName || formatDisplayTeamName(_team),
+      division: _team.division,
+      poolName: _team.poolName,
+      courts: _team.courts,
       statusText,
     });
+    setTimeout(() => {
+      setToastMessage((prev) => (prev?.statusText === statusText ? null : prev));
+    }, 4000);
   };
 
   // Toggle entire team check-in with 1 tap
@@ -600,7 +593,6 @@ export function App() {
     const firstDiv = Array.from(uploadedDivisions)[0] || 'Coed Intermediate';
     const divNames = Array.from(uploadedDivisions).join(', ');
     setSelectedDivision(firstDiv);
-    setActiveTeamId(newlyLoadedTeams[0]?.id ?? null);
     setUploadError(null);
     setShowUploadModal(false);
     setUploadSuccessBanner(
@@ -679,7 +671,6 @@ export function App() {
       return combined;
     });
     setSelectedDivision(divName);
-    setActiveTeamId(result.teams[0]?.id ?? null);
     setUploadError(null);
     setPasteCsvText('');
     setShowUploadModal(false);
@@ -730,11 +721,6 @@ export function App() {
   const divisionScopedTeams = useMemo(() => {
     return teams.filter((t) => t.division === selectedDivision);
   }, [teams, selectedDivision]);
-
-  const currentDivisionMeta = useMemo(
-    () => divisionsList.find((d) => d.division === selectedDivision) || divisionsList[0],
-    [divisionsList, selectedDivision]
-  );
 
   // Derived statistics for the current Division view
   const stats = useMemo(() => {
@@ -843,14 +829,6 @@ export function App() {
       );
     });
   }, [teams, divisionScopedTeams, statusFilter, searchQuery]);
-
-  // Automatically highlight the first matching team in the Now Checking In pass when a player searches their name
-  useEffect(() => {
-    const q = searchQuery.trim();
-    if (q.length >= 2 && filteredTeams.length > 0) {
-      setActiveTeamId(filteredTeams[0].id);
-    }
-  }, [searchQuery, filteredTeams]);
 
   // Group by Division + Pool
   const groupedByDivisionAndPool = useMemo(() => {
@@ -1063,8 +1041,6 @@ export function App() {
                         setEditingDivisionCourts(div.division);
                       } else {
                         setSelectedDivision(div.division);
-                        const firstInDiv = teams.find((t) => t.division === div.division);
-                        if (firstInDiv) setActiveTeamId(firstInDiv.id);
                       }
                     }}
                     className="px-2.5 py-1.5 text-xs font-extrabold whitespace-nowrap flex items-center gap-1.5 cursor-pointer"
@@ -1222,192 +1198,21 @@ export function App() {
           </div>
         )}
 
-        {/* NOW CHECKING IN — Mobile-Optimized Boarding-Pass Card */}
-        {activeTeam && (() => {
-          const activeStatus = getTeamStatus(activeTeam);
-          const isAllChecked = activeStatus === 'checked-in';
-          const isHalfChecked = activeStatus === 'partial';
-          const checkedPlayersCount = activeTeam.players.filter((p) => p.checkedIn).length;
-          const divCourtLabel =
-            activeTeam.divisionCourts || currentDivisionMeta?.courtLabel || activeTeam.courts;
-
-          return (
-            <div className={`relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 text-white rounded-3xl p-4 sm:p-5 shadow-xl border-2 transition-all ${
-              isAllChecked
-                ? 'border-emerald-500/80'
-                : isHalfChecked
-                ? 'border-amber-500/80'
-                : 'border-red-500/70'
-            }`}>
-              {/* Subtle ambient top-right glow */}
-              <div className={`pointer-events-none absolute -top-20 -right-20 w-64 h-64 rounded-full blur-3xl ${
-                isAllChecked ? 'bg-emerald-500/10' : isHalfChecked ? 'bg-amber-500/10' : 'bg-red-500/10'
-              }`} />
-
-              {/* Top Row: Status Pill + Division Pill on Left, Edit & Close on Right */}
-              <div className="relative flex items-center justify-between gap-2 pb-3 border-b border-slate-800/90">
-                <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-                  <span
-                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-extrabold uppercase tracking-wider shadow-2xs ${
-                      isAllChecked
-                        ? 'bg-emerald-400 text-slate-950'
-                        : isHalfChecked
-                        ? 'bg-amber-400 text-slate-950'
-                        : 'bg-red-500/20 text-red-300 border border-red-500/40'
-                    }`}
-                  >
-                    <UserCheck className="w-3 h-3 stroke-[2.5]" />
-                    <span>
-                      {isAllChecked
-                        ? 'Checked In ✓'
-                        : isHalfChecked
-                        ? `${checkedPlayersCount}/${activeTeam.players.length} Here`
-                        : 'Not Checked In'}
-                    </span>
-                  </span>
-
-                  <button
-                    type="button"
-                    onClick={() => setEditingDivisionCourts(activeTeam.division)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-indigo-500/20 hover:bg-indigo-500/35 text-indigo-200 border border-indigo-400/30 transition truncate cursor-pointer"
-                    title="Click to edit assigned courts for this division"
-                  >
-                    <span className="truncate">{activeTeam.division}</span>
-                    <span className="text-indigo-400">•</span>
-                    <span className="text-indigo-100 shrink-0">Ct {divCourtLabel}</span>
-                    <Edit3 className="w-2.5 h-2.5 opacity-80 shrink-0" />
-                  </button>
-                </div>
-
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setEditingTeam(activeTeam)}
-                    className="p-1.5 rounded-xl text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-800 border border-slate-700/80 transition cursor-pointer"
-                    title="Edit team details"
-                  >
-                    <Edit3 className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTeamId(null)}
-                    className="p-1.5 rounded-xl text-slate-400 hover:text-white bg-slate-800/60 hover:bg-slate-800 border border-slate-700/60 transition cursor-pointer"
-                    title="Hide spotlight card"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Team Name + Pool & Court Callout Row */}
-              <div className="mt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] uppercase tracking-widest text-emerald-400 font-extrabold">
-                      Team Name
-                    </span>
-                    {toastMessage && (
-                      <span className="text-[11px] font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded-full">
-                        {toastMessage.statusText}
-                      </span>
-                    )}
-                    {activeTeam.notes && (
-                      <span className="text-[10px] font-semibold text-amber-300 bg-amber-500/15 border border-amber-400/30 px-2 py-0.5 rounded-md">
-                        Note: {activeTeam.notes}
-                      </span>
-                    )}
-                  </div>
-                  <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight text-white mt-0.5 leading-snug">
-                    {activeTeam.rawTeamName || formatDisplayTeamName(activeTeam)}
-                  </h2>
-                </div>
-
-                {/* Compact Side-by-Side Pool & Court Tiles */}
-                <div className="grid grid-cols-2 gap-2 shrink-0 sm:min-w-[240px]">
-                  <div className="bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2">
-                    <div className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
-                      Pool
-                    </div>
-                    <div className="text-sm sm:text-base font-extrabold text-white">
-                      {activeTeam.poolName}
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => setEditingDivisionCourts(activeTeam.division)}
-                    className="bg-emerald-950/50 hover:bg-emerald-950/80 border border-emerald-500/40 rounded-xl px-3 py-2 text-left transition cursor-pointer"
-                    title="Click to edit assigned courts"
-                  >
-                    <div className="flex items-center justify-between text-[10px] uppercase tracking-wider font-bold text-emerald-300">
-                      <span>Court</span>
-                      <Edit3 className="w-2.5 h-2.5 opacity-75" />
-                    </div>
-                    <div className="text-sm sm:text-base font-extrabold text-emerald-400 flex items-center gap-1">
-                      <MapPin className="w-3.5 h-3.5 shrink-0" />
-                      <span>Ct {activeTeam.courts}</span>
-                    </div>
-                  </button>
-                </div>
-              </div>
-
-              {/* 2-Column Partner Tap Grid (Side-by-Side on Phone!) */}
-              <div className="mt-3">
-                <div className="text-[11px] text-slate-400 font-semibold mb-1.5">
-                  Tap your name to check in ({checkedPlayersCount}/{activeTeam.players.length} here):
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {activeTeam.players.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => togglePlayerCheckIn(activeTeam.id, p.id)}
-                      className={`group flex items-center gap-2 px-3 py-2.5 rounded-xl border text-left transition active:scale-[0.98] cursor-pointer ${
-                        p.checkedIn
-                          ? 'bg-emerald-500/20 border-emerald-400/80 text-white shadow-2xs'
-                          : 'bg-slate-800/80 hover:bg-slate-800 border-slate-700/90 text-slate-200'
-                      }`}
-                    >
-                      {p.checkedIn ? (
-                        <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                      ) : (
-                        <Circle className="w-4 h-4 text-slate-400 group-hover:text-slate-200 shrink-0" />
-                      )}
-                      <div className="min-w-0">
-                        <div className="text-xs sm:text-sm font-bold truncate text-white">
-                          {p.name}
-                        </div>
-                        <div
-                          className={`text-[10px] font-medium truncate ${
-                            p.checkedIn ? 'text-emerald-300' : 'text-slate-400'
-                          }`}
-                        >
-                          {p.checkedIn ? 'Checked In ✓' : 'Tap to check in'}
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Full-Width 1-Tap Check-In Button */}
-              <button
-                type="button"
-                onClick={() => toggleFullTeamCheckIn(activeTeam.id)}
-                className={`mt-3 w-full py-3 px-4 rounded-xl font-extrabold text-sm flex items-center justify-center gap-2 transition active:scale-[0.99] shadow-md cursor-pointer ${
-                  isAllChecked
-                    ? 'bg-emerald-500 text-slate-950 hover:bg-emerald-400'
-                    : 'bg-white text-slate-950 hover:bg-emerald-50'
-                }`}
-              >
-                <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
-                <span>
-                  {isAllChecked ? 'Full Team Checked In ✓' : 'Mark Full Team Checked In'}
-                </span>
-              </button>
+        {toastMessage && (
+          <div className="bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-md border border-emerald-500/60 flex items-center justify-between gap-3 text-xs sm:text-sm">
+            <div className="flex items-center gap-2 min-w-0">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span className="font-bold truncate text-white">{toastMessage.teamName}</span>
+              <span className="text-emerald-400 font-semibold">• {toastMessage.statusText}</span>
             </div>
-          );
-        })()}
+            <button
+              onClick={() => setToastMessage(null)}
+              className="text-slate-400 hover:text-white p-1 cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
 
         {groupedByDivisionAndPool.length === 0 ? (
           <div className="bg-white rounded-3xl p-8 text-center border border-slate-200 shadow-xs my-4">
@@ -1494,21 +1299,12 @@ export function App() {
                     const status = getTeamStatus(team);
                     const isFull = status === 'checked-in';
                     const isPartial = status === 'partial';
-                    const isCurrentlyCheckingIn = activeTeamId === team.id;
 
                     return (
                       <div
                         key={team.id}
-                        onClick={() => setActiveTeamId(team.id)}
-                        className={`p-3.5 sm:p-4 transition-colors cursor-pointer ${
-                          isCurrentlyCheckingIn
-                            ? 'ring-2 ring-inset ring-emerald-500 ' +
-                              (isFull
-                                ? 'bg-emerald-50/60'
-                                : isPartial
-                                ? 'bg-amber-50/60'
-                                : 'bg-rose-100/80')
-                            : isFull
+                        className={`p-3.5 sm:p-4 transition-colors ${
+                          isFull
                             ? 'bg-emerald-50/35 hover:bg-emerald-50/55 border-l-4 border-l-emerald-500'
                             : isPartial
                             ? 'bg-amber-50/40 hover:bg-amber-50/60 border-l-4 border-l-amber-400'
@@ -1831,7 +1627,6 @@ export function App() {
                       const defaults = getDefaultTournamentTeams(totalCourtsAvailable);
                       setTeams(defaults);
                       setSelectedDivision(defaults[0]?.division || 'Coed Intermediate');
-                      setActiveTeamId(defaults[0]?.id ?? null);
                       setShowUploadModal(false);
                     }}
                     className="text-xs text-slate-500 hover:text-slate-800 underline cursor-pointer"
