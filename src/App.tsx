@@ -333,7 +333,7 @@ export function App() {
     if (teams.length === 0) return;
     let active = true;
 
-    syncTeamsToSqlite(teams, tournamentName)
+    syncTeamsToSqlite(teams, tournamentName, totalCourtsAvailable)
       .then((res) => {
         if (!active) return;
         if (res.success) {
@@ -354,7 +354,7 @@ export function App() {
     return () => {
       active = false;
     };
-  }, [teams, tournamentName]);
+  }, [teams, tournamentName, totalCourtsAvailable]);
 
   const getStoredAdminPassword = (): string => {
     try {
@@ -2976,6 +2976,10 @@ function SqliteManagerModal({
   if (!isOpen) return null;
 
   const sampleQueries = [
+    {
+      label: 'Tournament Info',
+      sql: 'SELECT tournament_name, total_teams, total_courts, last_synced_at FROM tournament_info;',
+    },
     {
       label: 'All Teams + Courts/Pools',
       sql: 'SELECT Tournament_Name, team_name, division, total_courts, Total_Pools, pool_name, courts, is_checked_in, checked_in_at FROM checkin ORDER BY division, pool_name;',

@@ -92,6 +92,17 @@ export async function getSqliteDb(): Promise<Database> {
       dbInstance = new SQL.Database();
     }
 
+    // Ensure the `tournament_info` table exists
+    dbInstance!.run(`
+      CREATE TABLE IF NOT EXISTS tournament_info (
+        id TEXT PRIMARY KEY,
+        tournament_name TEXT NOT NULL,
+        total_teams INTEGER DEFAULT 0,
+        total_courts INTEGER DEFAULT 18,
+        last_synced_at TEXT NOT NULL
+      );
+    `);
+
     // Ensure the `checkin` table exists
     dbInstance!.run(`
       CREATE TABLE IF NOT EXISTS checkin (
@@ -153,11 +164,29 @@ export async function getSqliteDb(): Promise<Database> {
  */
 export async function syncTeamsToSqlite(
   teams: TeamEntry[],
-  tournamentName: string
+  tournamentName: string,
+  totalCourtsAvailable: number = 18
 ): Promise<{ success: boolean; rowsSaved: number; error?: string }> {
   try {
     const db = await getSqliteDb();
     const nowIso = new Date().toISOString();
+    const effectiveTournamentName = tournamentName.trim() || 'No Attitude Check-In';
+
+    // 1. Save or update tournament metadata in `tournament_info`
+    try {
+      db.run(
+        `INSERT OR REPLACE INTO tournament_info (
+          id,
+          tournament_name,
+          total_teams,
+          total_courts,
+          last_synced_at
+        ) VALUES ('current', ?, ?, ?, ?);`,
+        [effectiveTournamentName, teams.length, totalCourtsAvailable, nowIso]
+      );
+    } catch (tErr) {
+      console.warn('[SQLite] tournament_info update warning:', tErr);
+    }
 
     // Precompute division-level metadata: total_courts and Total_Pools
     const divisionStatsMap = new Map<string, { totalCourts: number; totalPools: number }>();
@@ -208,12 +237,6 @@ export async function syncTeamsToSqlite(
     }
 
     db.run('BEGIN TRANSACTION;');
-
-    const effectiveTournamentName =
-      tournamentName.toLowerCase().includes('11/7') ||
-      tournamentName.toLowerCase().includes('no attitude')
-        ? 'NA_11072026'
-        : tournamentName.trim() || 'NA_11072026';
 
     const insertStmt = db.prepare(`
       INSERT OR REPLACE INTO checkin (
@@ -283,6 +306,13 @@ export async function syncTeamsToSqlite(
     if (teams.length > 0) {
       const currentIds = teams.map((t) => `'${t.id.replace(/'/g, "''")}'`).join(',');
       db.run(`DELETE FROM checkin WHERE id NOT IN (${currentIds});`);
+    }
+
+    // Ensure all records in checkin reflect the exact tournament name
+    try {
+      db.run(`UPDATE checkin SET Tournament_Name = ?;`, [effectiveTournamentName]);
+    } catch {
+      // ignore
     }
 
     db.run('COMMIT;');

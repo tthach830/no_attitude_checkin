@@ -8,6 +8,14 @@ async function exportToSqlite() {
   const db = new SQL.Database();
 
   db.run(`
+    CREATE TABLE IF NOT EXISTS tournament_info (
+      id TEXT PRIMARY KEY,
+      tournament_name TEXT NOT NULL,
+      total_teams INTEGER DEFAULT 0,
+      total_courts INTEGER DEFAULT 18,
+      last_synced_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS checkin (
       id TEXT PRIMARY KEY,
       Tournament_Name TEXT,
@@ -113,7 +121,7 @@ async function exportToSqlite() {
   for (const t of sampleTeams) {
     stmt.run([
       t.id,
-      t.tournament_name,
+      'No Attitude Check-In',
       t.name,
       t.div,
       t.total_courts,
@@ -136,6 +144,11 @@ async function exportToSqlite() {
     ]);
   }
   stmt.free();
+
+  db.run(`
+    INSERT INTO tournament_info (id, tournament_name, total_teams, total_courts, last_synced_at)
+    VALUES ('current', 'No Attitude Check-In', 3, 18, datetime('now'));
+  `);
 
   const dbPath = path.join(__dirname, '..', 'checkin.sqlite');
   const binary = db.export();
