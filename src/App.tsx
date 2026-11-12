@@ -71,10 +71,15 @@ const DIVISION_BADGE_COLORS = [
 export function App() {
   const [tournamentName, setTournamentName] = useState<string>(() => {
     const saved = localStorage.getItem(STORAGE_TOURNAMENT_NAME_KEY);
-    if (saved && saved !== 'NA_11072026' && !saved.startsWith('No Attitude Tournament (')) {
+    if (
+      saved &&
+      saved !== 'NA_11072026' &&
+      !saved.startsWith('No Attitude Tournament (') &&
+      saved !== 'No Attitude Tournament (11/7/2026) Check-In'
+    ) {
       return saved;
     }
-    return 'No Attitude Tournament (11/7/2026) Check-In';
+    return 'No Attitude Check-In';
   });
 
   const [totalCourtsAvailable, setTotalCourtsAvailable] = useState<number>(() => {
